@@ -146,9 +146,15 @@ if __name__ == "__main__":
 
     data_root = dataset_configs["data_root"]
     if not args.demo:
-        seq_names = sorted(
-            os.listdir(os.path.join(data_root, dataset_configs["test"]["subdir"]))
-        )
+        set_cfg = dataset_configs["test"]
+        if "seqs" not in set_cfg:
+            sets_seqs = sorted(os.listdir(os.path.join(data_root, set_cfg["subdir"])))
+        else:
+            sets_seqs = set_cfg["seqs"]
+        seq_names = sets_seqs
+        # seq_names = sorted(
+        #     os.listdir(os.path.join(data_root, dataset_configs["test"]["subdir"]))
+        # )
     else:
         seq_names = sorted(
             os.listdir(os.path.join(data_root, dataset_configs["demo"]["subdir"]))

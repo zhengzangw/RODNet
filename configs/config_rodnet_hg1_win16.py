@@ -1,30 +1,24 @@
 dataset_cfg = dict(
-    dataset_name='ROD2021',
-    base_root="/mnt/disk2/CRUW/ROD2021",
-    data_root="/mnt/disk2/CRUW/ROD2021/sequences",
-    anno_root="/mnt/disk2/CRUW/ROD2021/annotations",
-    anno_ext='.txt',
+    dataset_name="rod2021_valid",
+    base_root="./rod2021_valid",
+    data_root="./rod2021_valid/sequences",
+    anno_root="./rod2021_valid/annotations",
+    anno_ext=".txt",
     train=dict(
-        subdir='train',
+        subdir="train",
         # seqs=[],  # can choose from the subdir folder
     ),
-    valid=dict(
-        subdir='valid',
-        seqs=[],
-    ),
+    valid=dict(subdir="valid", seqs=[],),
     test=dict(
-        subdir='test',
+        subdir="test",
         # seqs=[],  # can choose from the subdir folder
     ),
-    demo=dict(
-        subdir='demo',
-        seqs=[],
-    ),
+    demo=dict(subdir="demo", seqs=[],),
 )
 
 model_cfg = dict(
-    type='HG',
-    name='rodnet-hg1-win16-wobg',
+    type="HG",
+    name="rodnet-hg1-win16-wobg",
     max_dets=20,
     peak_thres=0.4,
     ols_thres=0.3,
@@ -33,26 +27,26 @@ model_cfg = dict(
 
 confmap_cfg = dict(
     confmap_sigmas={
-        'pedestrian': 15,
-        'cyclist': 20,
-        'car': 30,
+        "pedestrian": 15,
+        "cyclist": 20,
+        "car": 30,
         # 'van': 40,
         # 'truck': 50,
     },
     confmap_sigmas_interval={
-        'pedestrian': [5, 15],
-        'cyclist': [8, 20],
-        'car': [10, 30],
+        "pedestrian": [5, 15],
+        "cyclist": [8, 20],
+        "car": [10, 30],
         # 'van': [15, 40],
         # 'truck': [20, 50],
     },
     confmap_length={
-        'pedestrian': 1,
-        'cyclist': 2,
-        'car': 3,
+        "pedestrian": 1,
+        "cyclist": 2,
+        "car": 3,
         # 'van': 4,
         # 'truck': 5,
-    }
+    },
 )
 
 train_cfg = dict(
