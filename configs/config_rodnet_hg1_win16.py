@@ -26,27 +26,13 @@ model_cfg = dict(
 )
 
 confmap_cfg = dict(
-    confmap_sigmas={
-        "pedestrian": 15,
-        "cyclist": 20,
-        "car": 30,
-        # 'van': 40,
-        # 'truck': 50,
-    },
+    confmap_sigmas={"pedestrian": 15, "cyclist": 20, "car": 30,},
     confmap_sigmas_interval={
         "pedestrian": [5, 15],
         "cyclist": [8, 20],
         "car": [10, 30],
-        # 'van': [15, 40],
-        # 'truck': [20, 50],
     },
-    confmap_length={
-        "pedestrian": 1,
-        "cyclist": 2,
-        "car": 3,
-        # 'van': 4,
-        # 'truck': 5,
-    },
+    confmap_length={"pedestrian": 1, "cyclist": 2, "car": 3,},
 )
 
 train_cfg = dict(

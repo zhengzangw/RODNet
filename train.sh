@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --time=02:00:00
+#SBATCH --time=04:00:00
 #SBATCH --qos=regular
 #SBATCH --constraint=gpu
 #SBATCH --nodes=1

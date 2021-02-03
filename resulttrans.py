@@ -27,6 +27,9 @@ def parse_args():
     parser.add_argument("-o", "--output", type=str)
     parser.add_argument("-i", "--input", type=str)
 
+    parser.add_argument("--no_transform", action="store_true")
+    parser.add_argument("--seq_split", action="store_true")
+
     args = parser.parse_args()
     return args
 
@@ -36,28 +39,42 @@ if __name__ == "__main__":
 
     args = parse_args()
     in_dir = args.input
-    assert os.path.exists(in_dir)
     out_dir = args.output
-    os.makedirs(out_dir)
+    assert os.path.exists(in_dir)
 
-    for seq in val_seqs:
-        result_txt = os.path.join(in_dir, seq, "rod_res.txt")
-        out_txt = os.path.join(out_dir, f"{seq}.txt")
-        f_in = open(result_txt, "r")
-        f_out = open(out_txt, "w")
+    if not args.no_transform:
+        os.makedirs(out_dir)
+        print(f"> Create {out_dir}")
 
-        for line in f_in:
-            f_id, class_name, row_id, col_id, conf = line.split()
-            conf = float(conf)
-            if conf > 1:
-                conf = 1
-            rng, azm = idx2ra(
-                int(row_id), int(col_id), dataset.range_grid, dataset.angle_grid
-            )
-            res = f"{f_id} {rng} {azm} {class_name} {conf}"
-            print(res, file=f_out)
+        for seq in val_seqs:
+            result_txt = os.path.join(in_dir, seq, "rod_res.txt")
+            out_txt = os.path.join(out_dir, f"{seq}.txt")
+            f_in = open(result_txt, "r")
+            f_out = open(out_txt, "w")
 
-        f_in.close()
-        f_out.close()
+            for line in f_in:
+                f_id, class_name, row_id, col_id, conf = line.split()
+                conf = float(conf)
+                if conf > 1:
+                    conf = 1
+                rng, azm = idx2ra(
+                    int(row_id), int(col_id), dataset.range_grid, dataset.angle_grid
+                )
+                res = f"{f_id} {rng} {azm} {class_name} {conf}"
+                print(res, file=f_out)
+
+            f_in.close()
+            f_out.close()
+
+    if args.seq_split:
+        for src_seq in val_seqs:
+            src_txt = os.path.join(in_dir, f"{src_seq}.txt")
+            assert os.path.exists(src_txt)
+
+            tgt_dir = out_dir + "_" + src_seq
+            os.makedirs(tgt_dir)
+            tgt_txt = os.path.join(tgt_dir, f"{src_seq}.txt")
+            shutil.copy(src_txt, tgt_txt)
+            print(f"> Create {tgt_dir}")
 
     print("> Transform completed!")

@@ -8,19 +8,21 @@ dataset_cfg = dict(
         subdir="train",
         # seqs=[],  # can choose from the subdir folder
     ),
+    valid=dict(subdir="valid", seqs=[],),
     test=dict(
         subdir="test",
         # seqs=[],  # can choose from the subdir folder
     ),
-    # demo=dict(subdir="demo", seqs=[],),
+    demo=dict(subdir="demo", seqs=[],),
 )
 
 model_cfg = dict(
-    type="CDC",
-    name="rodnet-cdc-win16-wobg",
+    type="HGwI",
+    name="rodnet-hgwi-win16-wobg",
     max_dets=20,
-    peak_thres=0.3,
+    peak_thres=0.4,
     ols_thres=0.3,
+    stacked_num=1,
 )
 
 confmap_cfg = dict(
@@ -34,7 +36,7 @@ confmap_cfg = dict(
 )
 
 train_cfg = dict(
-    n_epoch=100,
+    n_epoch=50,
     batch_size=4,
     lr=0.00001,
     lr_step=5,  # lr will decrease 10 times after lr_step epoches
