@@ -51,6 +51,7 @@ def parse_args():
     parser.add_argument(
         "--symbol", action="store_true", help="use symbol or text+score"
     )
+    parser.add_argument("--log", action="store_true")
     args = parser.parse_args()
     return args
 
@@ -218,7 +219,7 @@ if __name__ == "__main__":
             data = data_dict["radar_data"]
             image_paths = data_dict["image_paths"][0]
             seq_name = data_dict["seq_names"][0]
-            if not args.demo:
+            if not args.demo and args.log:
                 confmap_gt = data_dict["anno"]["confmaps"]
                 obj_info = data_dict["anno"]["obj_infos"]
             else:

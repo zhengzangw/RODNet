@@ -37,7 +37,6 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     config_dict = load_configs_from_file(args.config)
-    # dataset = CRUW(data_root=config_dict['dataset_cfg']['base_root'])
     dataset = CRUW(data_root=config_dict['dataset_cfg']['base_root'], sensor_config_name='sensor_config_rod2021')
     radar_configs = dataset.sensor_cfg.radar_cfg
     range_grid = dataset.range_grid

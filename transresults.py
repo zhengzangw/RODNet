@@ -21,11 +21,25 @@ val_seqs = [
     "2019_09_29_ONRD013",
 ]
 
+test_seqs = [
+    "2019_05_28_CM1S013",
+    "2019_05_28_MLMS005",
+    "2019_05_28_PBMS006",
+    "2019_05_28_PCMS004",
+    "2019_05_28_PM2S012",
+    "2019_05_28_PM2S014",
+    "2019_09_18_ONRD004",
+    "2019_09_18_ONRD009",
+    "2019_09_29_ONRD012",
+    "2019_10_13_ONRD048",
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output", type=str)
     parser.add_argument("-i", "--input", type=str)
+    parser.add_argument("--test", action="store_true")
 
     parser.add_argument("--no_transform", action="store_true")
     parser.add_argument("--seq_split", action="store_true")
@@ -41,6 +55,9 @@ if __name__ == "__main__":
     in_dir = args.input
     out_dir = args.output
     assert os.path.exists(in_dir)
+
+    if args.test:
+        val_seqs = test_seqs
 
     if not args.no_transform:
         os.makedirs(out_dir)

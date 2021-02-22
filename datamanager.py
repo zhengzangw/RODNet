@@ -4,6 +4,14 @@ import pathlib
 import shutil
 from itertools import *
 
+import numpy as np
+from PIL import Image
+
+
+def create_empty_img(path):
+    im = Image.fromarray(np.zeros((1, 1)) + 255).convert("RGB")
+    im.save(path)
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -47,13 +55,22 @@ def link_seq(
         radar_dir = os.path.join(seq_dir, "RADAR_RA_H")
         anno_txt = os.path.join(root, "annotations", tgt_folder, f"{seq}.txt")
 
+        ## radar
+        src = os.path.join(data_loc[f"{src_folder}_rad_data"], seq, "RADAR_RA_H")
+        os.symlink(os.path.abspath(src), radar_dir)
+
         ## image
         if load_image:
             src = os.path.join(data_loc[f"{src_folder}_cam_data"], seq, "IMAGES_0")
             os.symlink(os.path.abspath(src), image_dir)
-        ## radar
-        src = os.path.join(data_loc[f"{src_folder}_rad_data"], seq, "RADAR_RA_H")
-        os.symlink(os.path.abspath(src), radar_dir)
+        else:
+            os.makedirs(image_dir)
+            chirps = os.listdir(src)
+            frames = sorted(list(set([int(chirp.split("_")[0]) for chirp in chirps])))
+            imgs_name = [f"{frame:010}.jpg" for frame in frames]
+            for img_name in imgs_name:
+                create_empty_img(os.path.join(image_dir, img_name))
+
         # anno
         if load_anno:
             src = os.path.join(data_loc[f"{src_folder}_rad_label"], f"{seq}.txt")
