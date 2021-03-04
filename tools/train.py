@@ -215,7 +215,7 @@ if __name__ == "__main__":
                 if 'mnet_cfg' in model_cfg:
                     chirp_amp_curr = chirp_amp(data.numpy()[0, :, 0, 0, :, :], radar_configs['data_type'])
                 else:
-                    chirp_amp_curr = chirp_amp(data.numpy()[0, :, 0, :, :], radar_configs['data_type'])
+                    chirp_amp _curr = chirp_amp(data.numpy()[0, :, 0, :, :], radar_configs['data_type'])
 
                 # draw train images
                 fig_name = os.path.join(train_viz_path,

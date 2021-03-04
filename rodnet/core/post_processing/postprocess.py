@@ -1,8 +1,8 @@
 import numpy as np
-
-from .ops import detect_peaks
-from .lnms import lnms
 from rodnet.utils.visualization import visualize_postprocessing
+
+from .lnms import lnms
+from .ops import detect_peaks
 
 
 def search_surround(peak_conf, row, col, conf_valu, search_size):
@@ -25,19 +25,27 @@ def search_surround(peak_conf, row, col, conf_valu, search_size):
     return No_bigger, [row_start, row_end, col_start, col_end]
 
 
-def peak_mapping(peak_conf, peak_class, list_row, list_col, confmap, search_size, o_class):
+def peak_mapping(
+    peak_conf, peak_class, list_row, list_col, confmap, search_size, o_class
+):
     for i in range(len(list_col)):
         row_id = list_row[i]
         col_id = list_col[i]
         conf_valu = confmap[row_id, col_id]
 
-        flag, indices = search_surround(peak_conf, row_id, col_id, conf_valu, search_size)
+        flag, indices = search_surround(
+            peak_conf, row_id, col_id, conf_valu, search_size
+        )
         if flag:
             # clear all detections in search window
             search_width = indices[1] - indices[0] + 1
             search_height = indices[3] - indices[2] + 1
-            peak_conf[indices[0]:indices[1] + 1, indices[2]:indices[3] + 1] = np.zeros((search_width, search_height))
-            peak_class[indices[0]:indices[1] + 1, indices[2]:indices[3] + 1] = - np.ones((search_width, search_height))
+            peak_conf[
+                indices[0] : indices[1] + 1, indices[2] : indices[3] + 1
+            ] = np.zeros((search_width, search_height))
+            peak_class[
+                indices[0] : indices[1] + 1, indices[2] : indices[3] + 1
+            ] = -np.ones((search_width, search_height))
             # write the detected objects to matrix
             peak_conf[row_id, col_id] = conf_valu
             peak_class[row_id, col_id] = class_ids[o_class]
@@ -46,15 +54,15 @@ def peak_mapping(peak_conf, peak_class, list_row, list_col, confmap, search_size
 
 
 def find_greatest_points(peak_conf, peak_class):
-    detect_mat = - np.ones((rodnet_configs['max_dets'], 4))
+    detect_mat = -np.ones((rodnet_configs["max_dets"], 4))
     height = peak_conf.shape[0]
     width = peak_conf.shape[1]
     peak_flatten = peak_conf.flatten()
     indic = np.argsort(peak_flatten)
     ind_len = indic.shape[0]
 
-    if ind_len >= rodnet_configs['max_dets']:
-        choos_ind = np.flip(indic[-rodnet_configs['max_dets']:ind_len])
+    if ind_len >= rodnet_configs["max_dets"]:
+        choos_ind = np.flip(indic[-rodnet_configs["max_dets"] : ind_len])
     else:
         choos_ind = np.flip(indic)
 
@@ -78,19 +86,19 @@ def post_process(confmaps, config_dict):
     :param peak_thres: peak threshold
     :return: [B, win_size, max_dets, 4]
     """
-    n_class = config_dict['class_cfg']['n_class']
-    model_configs = config_dict['model_cfg']
-    rng_grid = config_dict['mappings']['range_grid']
-    agl_grid = config_dict['mappings']['angle_grid']
-    max_dets = model_configs['max_dets']
-    peak_thres = model_configs['peak_thres']
+    n_class = config_dict["class_cfg"]["n_class"]
+    model_configs = config_dict["model_cfg"]
+    rng_grid = config_dict["mappings"]["range_grid"]
+    agl_grid = config_dict["mappings"]["angle_grid"]
+    max_dets = model_configs["max_dets"]
+    peak_thres = model_configs["peak_thres"]
 
     batch_size, class_size, win_size, height, width = confmaps.shape
 
     if class_size != n_class:
         raise TypeError("Wrong class number setting. ")
 
-    res_final = - np.ones((batch_size, win_size, max_dets, 4))
+    res_final = -np.ones((batch_size, win_size, max_dets, 4))
 
     for b in range(batch_size):
         for w in range(win_size):
@@ -104,8 +112,15 @@ def post_process(confmaps, config_dict):
                     rng = rng_grid[ridx]
                     agl = agl_grid[aidx]
                     conf = confmap[ridx, aidx]
-                    obj_dict = {'frameid': None, 'range': rng, 'angle': agl, 'ridx': ridx, 'aidx': aidx,
-                                'classid': c, 'score': conf}
+                    obj_dict = {
+                        "frameid": None,
+                        "range": rng,
+                        "angle": agl,
+                        "ridx": ridx,
+                        "aidx": aidx,
+                        "classid": c,
+                        "score": conf,
+                    }
                     obj_dicts_in_class.append(obj_dict)
 
                 detect_mat_in_class = lnms(obj_dicts_in_class, config_dict)
@@ -113,7 +128,7 @@ def post_process(confmaps, config_dict):
 
             detect_mat = np.array(detect_mat)
             detect_mat = np.reshape(detect_mat, (class_size * max_dets, 4))
-            detect_mat = detect_mat[detect_mat[:, 3].argsort(kind='mergesort')[::-1]]
+            detect_mat = detect_mat[detect_mat[:, 3].argsort(kind="mergesort")[::-1]]
             res_final[b, w, :, :] = detect_mat[:max_dets]
 
     return res_final
@@ -127,19 +142,20 @@ def post_process_single_frame(confmaps, dataset, config_dict):
     :param peak_thres: peak threshold
     :return: [B, win_size, max_dets, 4]
     """
+    # breakpoint()
     n_class = dataset.object_cfg.n_class
     rng_grid = dataset.range_grid
     agl_grid = dataset.angle_grid
-    model_configs = config_dict['model_cfg']
-    max_dets = model_configs['max_dets']
-    peak_thres = model_configs['peak_thres']
+    model_configs = config_dict["model_cfg"]
+    max_dets = model_configs["max_dets"]
+    peak_thres = model_configs["peak_thres"]
 
     class_size, height, width = confmaps.shape
 
     if class_size != n_class:
         raise TypeError("Wrong class number setting. ")
 
-    res_final = - np.ones((max_dets, 4))
+    res_final = -np.ones((max_dets, 4))
 
     detect_mat = []
     for c in range(class_size):
@@ -167,7 +183,7 @@ def post_process_single_frame(confmaps, dataset, config_dict):
 
     detect_mat = np.array(detect_mat)
     detect_mat = np.reshape(detect_mat, (class_size * max_dets, 4))
-    detect_mat = detect_mat[detect_mat[:, 3].argsort(kind='mergesort')[::-1]]
+    detect_mat = detect_mat[detect_mat[:, 3].argsort(kind="mergesort")[::-1]]
     res_final[:, :] = detect_mat[:max_dets]
 
     return res_final
