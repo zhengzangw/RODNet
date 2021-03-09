@@ -1,12 +1,13 @@
-import numpy as np
-import random
 import ctypes
-import torch
+import random
 from multiprocessing import Array, Process
+
+import numpy as np
+import torch
 
 
 class CRDataLoader():
-    def __init__(self, dataset, shuffle=False, num_parallel_batch=2, noise_channel=False):
+    def __init__(self, dataset, shuffle=False, num_parallel_batch=2, noise_channel=False, freq_channel=False):
         # parameters settings
         self.dataset = dataset
         self.config_dict = self.dataset.config_dict
@@ -20,8 +21,8 @@ class CRDataLoader():
 
         if noise_channel:
             self.n_class = self.n_class + 1
-        else:
-            self.n_class = self.n_class
+        if freq_channel:
+            self.n_class = self.n_class + 2
 
         self.length = len(dataset) // self.batch_size + (1 if len(dataset) % self.batch_size != 0 else 0)
         self.loading_seq = [i for i in range(len(dataset))]

@@ -10,6 +10,16 @@ from tqdm import tqdm
 from .loaders import list_pkl_filenames, list_pkl_filenames_from_prepared
 
 
+def add_freq_channel(confmap, radar_data):
+    # confmap [n_class, W, h, w]
+    # radar_data [2, W, h, w]
+
+    energy = np.expand_dims(np.sqrt(radar_data[0] ** 2 + radar_data[1] ** 2), axis=0)
+    phase = np.expand_dims(np.arctan(radar_data[1] / radar_data[0]), axis=0)
+    confmap = np.concatenate([confmap, energy, phase])
+    return confmap
+
+
 class CRDataset(data.Dataset):
     """
     Pytorch Dataloader for CR Dataset
@@ -32,6 +42,7 @@ class CRDataset(data.Dataset):
         is_random_chirp=True,
         subset=None,
         noise_channel=False,
+        freq_channel=False,
     ):
         # parameters settings
         self.data_dir = data_dir
@@ -49,6 +60,7 @@ class CRDataset(data.Dataset):
         self.is_random_chirp = is_random_chirp
         self.n_chirps = 1
         self.noise_channel = noise_channel
+        self.freq_channel = freq_channel
 
         # Dataloader for MNet
         if "mnet_cfg" in self.config_dict["model_cfg"]:
@@ -260,6 +272,8 @@ class CRDataset(data.Dataset):
                     radar_configs["ramap_rsize"],
                     radar_configs["ramap_asize"],
                 )
+            if self.freq_channel:
+                confmap_gt = add_freq_channel(confmap_gt, radar_npy_win)
 
             data_dict["anno"] = dict(obj_infos=obj_info, confmaps=confmap_gt,)
         else:

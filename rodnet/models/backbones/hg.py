@@ -238,5 +238,5 @@ class RODDecode(nn.Module):
         x = self.prelu(
             self.convt2(x + x2)
         )  # (B, 128, W/2, 32, 32) -> (B, 64, W, 64, 64)
-        x = self.convt3(x + x1)  # (B, 64, W, 64, 64) -> (B, 64, W, 128, 128)
+        x = self.prelu(self.convt3(x + x1))  # (B, 64, W, 64, 64) -> (B, 64, W, 128, 128)
         return x

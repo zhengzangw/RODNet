@@ -4,25 +4,16 @@ dataset_cfg = dict(
     data_root="./rod2021_valid/sequences",
     anno_root="./rod2021_valid/annotations",
     anno_ext=".txt",
-    train=dict(
-        subdir="train",
-        # seqs=[],  # can choose from the subdir folder
-    ),
-    valid=dict(subdir="valid", seqs=[],),
-    test=dict(
-        subdir="test",
-        # seqs=[],  # can choose from the subdir folder
-    ),
-    demo=dict(subdir="demo", seqs=[],),
+    train=dict(subdir="train",),
+    test=dict(subdir="test",),
 )
 
 model_cfg = dict(
-    type="HG",
-    name="rodnet-hg1-win16-wobg",
+    type="CDC",
+    name="rodnet-cdc-win16-wobg",
     max_dets=20,
-    peak_thres=0.4,
+    peak_thres=0.3,
     ols_thres=0.3,
-    stacked_num=1,
 )
 
 confmap_cfg = dict(
@@ -36,10 +27,10 @@ confmap_cfg = dict(
 )
 
 train_cfg = dict(
-    n_epoch=30,
+    n_epoch=20,
     batch_size=4,
-    lr=0.00001,
-    lr_step=5,  # lr will decrease 10 times after lr_step epoches
+    lr=0.0001,
+    lr_step=10,  # lr will decrease 10 times after lr_step epoches
     win_size=16,
     train_step=1,
     train_stride=4,

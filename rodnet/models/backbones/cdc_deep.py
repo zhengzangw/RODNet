@@ -74,15 +74,15 @@ class RODEncode(nn.Module):
         x = self.relu(
             self.bn1a(self.conv1a(x))
         )  # (B, 2, W, 128, 128) -> (B, 64, W, 128, 128)
-        
+
         # additional
-        # x = self.relu(
-        #     self.bn1a_1(self.conv1a_1(x))
-        # )  # (B, 64, W, 128, 128) -> (B, 64, W, 128, 128)
-        # x = self.relu(
-        #     self.bn1a_2(self.conv1a_2(x))
-        # )  # (B, 64, W, 128, 128) -> (B, 64, W, 128, 128)
-        
+        x = self.relu(
+            self.bn1a_1(self.conv1a_1(x))
+        )  # (B, 64, W, 128, 128) -> (B, 64, W, 128, 128)
+        x = self.relu(
+            self.bn1a_2(self.conv1a_2(x))
+        )  # (B, 64, W, 128, 128) -> (B, 64, W, 128, 128)
+
         x = self.relu(
             self.bn1b(self.conv1b(x))
         )  # (B, 64, W, 128, 128) -> (B, 64, W/2, 64, 64)

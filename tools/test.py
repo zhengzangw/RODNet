@@ -51,6 +51,7 @@ def parse_args():
     parser.add_argument(
         "--symbol", action="store_true", help="use symbol or text+score"
     )
+    parser.add_argument("--use_freq_channel", action="store_true")
     parser.add_argument("--log", action="store_true")
     args = parser.parse_args()
     return args
@@ -77,6 +78,8 @@ if __name__ == "__main__":
         from rodnet.models import RODNetHG as RODNet
     elif model_configs["type"] == "HGwI":
         from rodnet.models import RODNetHGwI as RODNet
+    elif model_configs["type"] == "C21D":
+        from rodnet.models import RODNetC21D as RODNet
     else:
         raise NotImplementedError
 
@@ -103,13 +106,16 @@ if __name__ == "__main__":
     else:
         raise ValueError("No trained model found.")
 
+    n_class_test = n_class
     if args.use_noise_channel:
-        n_class_test = n_class + 1
-    else:
-        n_class_test = n_class
+        n_class_test += 1
+    if args.use_freq_channel:
+        n_class_test += 2
 
     print("Building model ... (%s)" % model_configs)
     if model_configs["type"] == "CDC":
+        rodnet = RODNet(n_class_test).cuda()
+    elif model_configs["type"] == "C21D":
         rodnet = RODNet(n_class_test).cuda()
     elif model_configs["type"] == "HG":
         rodnet = RODNet(n_class_test, stacked_num=stacked_num).cuda()
@@ -181,6 +187,7 @@ if __name__ == "__main__":
                 config_dict=config_dict,
                 split="test",
                 noise_channel=args.use_noise_channel,
+                freq_channel=args.use_freq_channel,
                 subset=subset,
                 is_random_chirp=False,
             )
@@ -242,7 +249,7 @@ if __name__ == "__main__":
             else:
                 confmap_pred = confmap_pred.cpu().detach().numpy()
 
-            if args.use_noise_channel:
+            if args.use_noise_channel or args.use_freq_channel:
                 confmap_pred = confmap_pred[:, :n_class, :, :, :]
 
             infer_time = time.time() - tic

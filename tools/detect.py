@@ -37,6 +37,9 @@ def process(confmap):
 if __name__ == "__main__":
     args = parse_args()
     confmaps = pickle.load(open(args.input, "rb"))
+    
+    # cnf = confmaps['2019_04_09_PMS1000'][0]
+    # breakpoint()
 
     out_dir = args.output
     os.makedirs(out_dir)

@@ -18,7 +18,7 @@ dataset_cfg = dict(
 
 model_cfg = dict(
     type="HG",
-    name="rodnet-hg1-win16-wobg",
+    name="rodnet-hg1-win16-lr3",
     max_dets=20,
     peak_thres=0.4,
     ols_thres=0.3,
@@ -38,7 +38,7 @@ confmap_cfg = dict(
 train_cfg = dict(
     n_epoch=30,
     batch_size=4,
-    lr=0.00001,
+    lr=0.001,
     lr_step=5,  # lr will decrease 10 times after lr_step epoches
     win_size=16,
     train_step=1,
