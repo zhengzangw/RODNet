@@ -18,7 +18,7 @@ def parse_args():
     parser.add_argument("--info", action="store_true")
     parser.add_argument("--build", type=str)
     parser.add_argument(
-        "--type", choices=["empty", "submit", "valid"], default="empty", type=str
+        "--type", choices=["empty", "submit", "valid", "valid1"], default="empty", type=str
     )
 
     args = parser.parse_args()
@@ -40,6 +40,10 @@ val_seqs = [
     "2019_05_23_PM1S015",
     "2019_05_29_MLMS006",
     "2019_09_29_ONRD001",
+    "2019_09_29_ONRD013",
+]
+val1_seqs = [
+    "2019_05_29_MLMS006",
     "2019_09_29_ONRD013",
 ]
 
@@ -119,6 +123,11 @@ if __name__ == "__main__":
     elif args.type == "valid":
         train_seqs = [seq for seq in rod2021_train_seqs if seq not in val_seqs]
         test_seqs = val_seqs
+        link_seq(train_seqs, "train", "train")
+        link_seq(test_seqs, "train", "test")
+    elif args.type == "valid1":
+        train_seqs = [seq for seq in rod2021_train_seqs if seq not in val1_seqs]
+        test_seqs = val1_seqs
         link_seq(train_seqs, "train", "train")
         link_seq(test_seqs, "train", "test")
 

@@ -20,6 +20,85 @@ def add_freq_channel(confmap, radar_data):
     return confmap
 
 
+def add_fft_channel(confmap, radar_data):
+    pass
+
+
+# seq, train, dynamic, scene
+# dynamic 1
+# parking lot (PL), campus road (CR), city street (CS), and highway (HW)
+scene_id = {"PL": 0, "CR": 1, "CS": 2, "HW": 3}
+seq_info = {
+    "2019_04_09_BMS1000": (1, 0, "PL"),
+    "2019_04_09_PMS1000": (1, 0, "PL"),
+    "2019_04_30_MLMS000": (1, 0, "CR"),
+    "2019_04_30_PBMS003": (1, 0, "PL"),
+    "2019_05_09_BM1S008": (1, 0, "CR"),
+    "2019_05_09_PCMS002": (1, 0, "CR"),
+    "2019_05_23_PM1S015": (1, 0, "PL"),
+    "2019_05_29_BM1S017": (1, 0, "PL"),
+    "2019_05_29_PM2S015": (1, 0, "PL"),
+    "2019_04_09_BMS1001": (1, 0, "PL"),
+    "2019_04_09_PMS1001": (1, 0, "PL"),
+    "2019_04_30_MLMS001": (1, 0, "CR"),
+    "2019_04_30_PCMS001": (1, 0, "CR"),
+    "2019_05_09_CM1S004": (1, 0, "CR"),
+    "2019_05_23_PM1S012": (1, 0, "PL"),
+    "2019_05_23_PM2S011": (1, 0, "PL"),
+    "2019_05_29_MLMS006": (1, 0, "CR"),
+    "2019_05_29_PM3S000": (1, 0, "PL"),
+    "2019_04_09_BMS1002": (1, 0, "PL"),
+    "2019_04_09_PMS2000": (1, 0, "PL"),
+    "2019_04_30_MLMS002": (1, 0, "CR"),
+    "2019_04_30_PM2S003": (1, 0, "PL"),
+    "2019_05_09_MLMS003": (1, 0, "CR"),
+    "2019_05_23_PM1S013": (1, 0, "PL"),
+    "2019_05_29_BCMS000": (1, 0, "CR"),
+    "2019_05_29_PBMS007": (1, 0, "PL"),
+    "2019_04_09_CMS1002": (1, 0, "PL"),
+    "2019_04_09_PMS3000": (1, 0, "PL"),
+    "2019_04_30_PBMS002": (1, 0, "PL"),
+    "2019_04_30_PM2S004": (1, 0, "PL"),
+    "2019_05_09_PBMS004": (1, 0, "CR"),
+    "2019_05_23_PM1S014": (1, 0, "PL"),
+    "2019_05_29_BM1S016": (1, 0, "PL"),
+    "2019_05_29_PCMS005": (1, 0, "CR"),
+    "2019_09_29_ONRD011": (1, 1, "HW"),
+    "2019_09_29_ONRD006": (1, 1, "HW"),
+    "2019_09_29_ONRD005": (1, 1, "HW"),
+    "2019_09_29_ONRD002": (1, 1, "CS"),
+    "2019_09_29_ONRD013": (1, 1, "CS"),
+    "2019_09_29_ONRD001": (1, 1, "CS"),
+    # test
+    "2019_05_28_CM1S013": (0, 0, "CR"),
+    "2019_05_28_MLMS005": (0, 0, "PL"),
+    "2019_05_28_PBMS006": (0, 0, "PL"),
+    "2019_05_28_PCMS004": (0, 0, "PL"),
+    "2019_05_28_PM2S012": (0, 0, "PL"),
+    "2019_05_28_PM2S014": (0, 0, "PL"),
+    "2019_09_18_ONRD004": (0, 1, "HW"),
+    "2019_09_18_ONRD009": (0, 1, "HW"),
+    "2019_09_29_ONRD012": (0, 1, "HW"),
+    "2019_10_13_ONRD048": (0, 1, "HW"),
+}
+
+
+def seq_split(data_files, seq_type):
+    ret = []
+    assert seq_type in ["PL", "CR", "CS", "HW", "D", "S"]
+    for data_file in data_files:
+        seq_name = data_file.split(".")[0]
+        flag = (
+            (seq_type == "D" and seq_info[seq_name][1] == 1)
+            or (seq_type == "S" and seq_info[seq_name][1] == 0)
+            or seq_info[seq_name][2] == seq_type
+        )
+        if flag:
+            ret.append(data_file)
+
+    return ret
+
+
 class CRDataset(data.Dataset):
     """
     Pytorch Dataloader for CR Dataset
@@ -43,6 +122,7 @@ class CRDataset(data.Dataset):
         subset=None,
         noise_channel=False,
         freq_channel=False,
+        seq_type=None,
     ):
         # parameters settings
         self.data_dir = data_dir
@@ -82,13 +162,15 @@ class CRDataset(data.Dataset):
         if subset is not None:
             self.data_files = [subset + ".pkl"]
         else:
-            # self.data_files = list_pkl_filenames(config_dict['dataset_cfg'], split)
             self.data_files = list_pkl_filenames_from_prepared(data_dir, split)
+        if seq_type is not None:
+            self.data_files = seq_split(self.data_files, seq_type)
+
         self.seq_names = [name.split(".")[0] for name in self.data_files]
         self.n_seq = len(self.seq_names)
 
         split_folder = split
-        for seq_id, data_file in enumerate(tqdm(self.data_files)):
+        for seq_id, data_file in tqdm(enumerate(self.data_files), leave=False):
             data_file_path = os.path.join(data_dir, split_folder, data_file)
             data_details = pickle.load(open(data_file_path, "rb"))
             if split == "train" or split == "valid":
@@ -118,6 +200,9 @@ class CRDataset(data.Dataset):
 
         seq_id, data_id = self.index_mapping[index]
         seq_name = self.seq_names[seq_id]
+        seq_type = None
+        if seq_name in seq_info and seq_info[seq_name][-1] in scene_id:
+            seq_type = scene_id[seq_info[seq_name][-1]]
         image_paths = self.image_paths[seq_id]
         radar_paths = self.radar_paths[seq_id]
         if len(self.confmaps) != 0:
@@ -125,6 +210,7 @@ class CRDataset(data.Dataset):
             this_seq_confmap = self.confmaps[seq_id]
 
         data_dict = dict(status=True, seq_names=seq_name, image_paths=[])
+        data_dict["seq_type"] = seq_type
 
         if self.is_random_chirp:
             chirp_id = random.randint(
@@ -143,47 +229,7 @@ class CRDataset(data.Dataset):
 
         # Load radar data
         try:
-            if (
-                radar_configs["data_type"] == "RI" or radar_configs["data_type"] == "AP"
-            ):  # drop this format
-                radar_npy_win = np.zeros(
-                    (self.win_size, ramap_rsize, ramap_asize, 2), dtype=np.float32
-                )
-                for idx, frameid in enumerate(
-                    range(data_id, data_id + self.win_size * self.step, self.step)
-                ):
-                    radar_npy_win[idx, :, :, :] = np.load(radar_paths[frameid])
-                    data_dict["image_paths"].append(image_paths[frameid])
-            elif (
-                radar_configs["data_type"] == "RISEP"
-                or radar_configs["data_type"] == "APSEP"
-            ):
-                if isinstance(chirp_id, int):
-                    radar_npy_win = np.zeros(
-                        (self.win_size, ramap_rsize, ramap_asize, 2), dtype=np.float32
-                    )
-                    for idx, frameid in enumerate(
-                        range(data_id, data_id + self.win_size * self.step, self.step)
-                    ):
-                        radar_npy_win[idx, :, :, :] = np.load(
-                            radar_paths[frameid][chirp_id]
-                        )
-                        data_dict["image_paths"].append(image_paths[frameid])
-                elif isinstance(chirp_id, list):
-                    radar_npy_win = np.zeros(
-                        (self.win_size, self.n_chirps, ramap_rsize, ramap_asize, 2),
-                        dtype=np.float32,
-                    )
-                    for idx, frameid in enumerate(
-                        range(data_id, data_id + self.win_size * self.step, self.step)
-                    ):
-                        for cid, c in enumerate(chirp_id):
-                            npy_path = radar_paths[frameid][c]
-                            radar_npy_win[idx, cid, :, :, :] = np.load(npy_path)
-                        data_dict["image_paths"].append(image_paths[frameid])
-                else:
-                    raise TypeError
-            elif radar_configs["data_type"] == "ROD2021":
+            if radar_configs["data_type"] == "ROD2021":
                 radar_npy_win = np.zeros(
                     (self.win_size, ramap_rsize, ramap_asize, 2), dtype=np.float32
                 )
@@ -210,41 +256,15 @@ class CRDataset(data.Dataset):
                     + "\nframe indices: %d:%d:%d"
                     % (data_id, data_id + self.win_size * self.step, self.step)
                 )
-            # radar_npy_win = np.transpose(radar_npy_win, (3, 0, 1, 2))
-            #
-            # data_dict['radar_data'] = radar_npy_win
-            #
-            # if len(self.confmaps) != 0:
-            #     confmap_gt = this_seq_confmap[data_id:data_id + self.win_size * self.step:self.step]
-            #     confmap_gt = np.transpose(confmap_gt, (1, 0, 2, 3))
-            #     obj_info = this_seq_obj_info[data_id:data_id + self.win_size * self.step:self.step]
-            #
-            #     data_dict['anno'] = dict(
-            #         obj_infos=obj_info,
-            #         confmaps=confmap_gt,
-            #     )
-            # else:
-            #     data_dict['anno'] = None
             return data_dict
 
-        # Dataloader for MNet
-        if "mnet_cfg" in self.config_dict["model_cfg"]:
-            radar_npy_win = np.transpose(radar_npy_win, (4, 0, 1, 2, 3))
-            assert radar_npy_win.shape == (
-                2,
-                self.win_size,
-                self.n_chirps,
-                radar_configs["ramap_rsize"],
-                radar_configs["ramap_asize"],
-            )
-        else:
-            radar_npy_win = np.transpose(radar_npy_win, (3, 0, 1, 2))
-            assert radar_npy_win.shape == (
-                2,
-                self.win_size,
-                radar_configs["ramap_rsize"],
-                radar_configs["ramap_asize"],
-            )
+        radar_npy_win = np.transpose(radar_npy_win, (3, 0, 1, 2))
+        assert radar_npy_win.shape == (
+            2,
+            self.win_size,
+            radar_configs["ramap_rsize"],
+            radar_configs["ramap_asize"],
+        )
 
         data_dict["radar_data"] = radar_npy_win
 

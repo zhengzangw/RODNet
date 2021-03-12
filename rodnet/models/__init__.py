@@ -1,9 +1,12 @@
+from .resnet import Resnet18
 from .rodnet_c21d import RODNetC21D
 from .rodnet_cdc import RODNetCDC
 from .rodnet_cdc_deep import RODNetCDC as RODNetCDC_deep
-from .rodnet_gsc import GSCStack
+from .rodnet_gsc import RODNetGSC
+from .rodnet_gscmp import RODNetGSCmp
 from .rodnet_hg import RODNetHG
 from .rodnet_hgwi import RODNetHGwI
+from .rodnet_resnet import RODNetResnet18
 
 
 def get_model(name):
@@ -18,6 +21,12 @@ def get_model(name):
     elif name == "CDCD":
         return RODNetCDC_deep
     elif name == "GSC":
-        return GSCStack
+        return RODNetGSC
+    elif name == "GSCmp":
+        return RODNetGSCmp
+    elif name == "cls_resnet":
+        return Resnet18
+    elif name == "Resnet18":
+        return RODNetResnet18
     else:
         raise NotImplementedError

@@ -7,7 +7,7 @@ from itertools import *
 from cruw import CRUW
 from cruw.mapping import idx2ra, ra2idx
 
-data_root = "./ROD2021"
+data_root = "./rod2021"
 dataset = CRUW(data_root=data_root, sensor_config_name="sensor_config_rod2021")
 
 val_seqs = [
@@ -18,6 +18,11 @@ val_seqs = [
     "2019_05_23_PM1S015",
     "2019_05_29_MLMS006",
     "2019_09_29_ONRD001",
+    "2019_09_29_ONRD013",
+]
+
+val1_seqs = [
+    "2019_05_29_MLMS006",
     "2019_09_29_ONRD013",
 ]
 
@@ -39,6 +44,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output", type=str)
     parser.add_argument("-i", "--input", type=str)
+    parser.add_argument("--val1", action="store_true")
     parser.add_argument("--test", action="store_true")
 
     parser.add_argument("--no_transform", action="store_true")
@@ -58,6 +64,8 @@ if __name__ == "__main__":
 
     if args.test:
         val_seqs = test_seqs
+    elif args.val1:
+        val_seqs = val1_seqs
 
     if not args.no_transform:
         os.makedirs(out_dir)

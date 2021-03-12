@@ -7,7 +7,8 @@ def _make_conv(
     stride=(1, 1, 1),
     kernel_size=(9, 5, 5),
     padding=(4, 2, 2),
-    raw=False,
+    bn=False,
+    relu=False,
 ):
     conv = nn.Conv3d(
         in_channels=in_channels,
@@ -16,12 +17,16 @@ def _make_conv(
         stride=stride,
         padding=padding,
     )
-    if raw:
-        return conv
-    else:
-        return nn.Sequential(
-            conv, nn.BatchNorm3d(out_channels), nn.ReLU(inplace=False),
-        )
+    layer = [conv]
+    if bn:
+        layer.append(nn.BatchNorm3d(out_channels))
+    if relu:
+        layer.append(nn.ReLU(inplace=True))
+    return nn.Sequential(*layer)
+
+
+def _make_pool(kernel_size=(2, 2, 2), padding=(0, 0, 0), stride=(2, 2, 2)):
+    return nn.MaxPool3d(kernel_size=kernel_size, padding=padding, stride=stride)
 
 
 C = 64
@@ -31,8 +36,7 @@ class GSCStack(nn.Module):
     def __init__(self, n_class, stacked_num=1, in_channels=2):
         super(GSCStack, self).__init__()
         self.stacked_num = stacked_num
-        self.conv1a = _make_conv(in_channels, C)
-        self.conv1b = _make_conv(C, C)
+        self.conv1 = _make_conv(in_channels, C, relu=True)
 
         self.stacks = []
         for i in range(stacked_num):
@@ -41,16 +45,15 @@ class GSCStack(nn.Module):
                     [
                         GSCEncode(),
                         GSCDecode(),
-                        _make_conv(C, n_class, raw=True),
-                        _make_conv(n_class, C, raw=True),
+                        _make_conv(C, n_class),
+                        _make_conv(n_class, C),
                     ]
                 )
             )
         self.stacks = nn.ModuleList(self.stacks)
 
     def forward(self, x):
-        x = self.conv1a(x)
-        x = self.conv1b(x)
+        x = self.conv1(x)
 
         out = []
         for i in range(self.stacked_num):
@@ -68,23 +71,23 @@ class GSCStack(nn.Module):
 class GSCEncode(nn.Module):
     def __init__(self):
         super(GSCEncode, self).__init__()
-        self.conv1a = _make_conv(C, C)
-        self.conv1b = _make_conv(C, C, stride=(2, 2, 2))
-        self.conv2a = _make_conv(C, 2 * C)
-        self.conv2b = _make_conv(2 * C, 2 * C, stride=(2, 2, 2))
-        self.conv3a = _make_conv(2 * C, 4 * C)
-        self.conv3b = _make_conv(4 * C, 4 * C, stride=(1, 2, 2))
+        self.conv1 = _make_conv(C, C)
+        self.pool1 = _make_pool()
+        self.conv2 = _make_conv(C, C)
+        self.pool2 = _make_pool()
+        self.conv3 = _make_conv(C, C)
+        self.pool3 = _make_pool(stride=(1, 2, 2), kernel_size=(1, 2, 2))
 
     def forward(self, x):
-        x = self.conv1a(x)
+        x = self.conv1(x)
         x1 = x  # [Bx64xWx128x128]
-        x = self.conv1b(x)
-        x = self.conv2a(x)
+        x = self.pool1(x)
+        x = self.conv2(x)
         x2 = x  # [Bx64xW/2x64x64]
-        x = self.conv2b(x)
-        x = self.conv3a(x)
+        x = self.pool2(x)
+        x = self.conv3(x)
         x3 = x  # [Bx128xW/4x32x32]
-        x = self.conv3b(x)
+        x = self.pool3(x)
         # [Bx256xW/4x16x16]
 
         return x, x1, x2, x3
@@ -94,11 +97,11 @@ class GSCDecode(nn.Module):
     def __init__(self):
         super(GSCDecode, self).__init__()
         self.upsample3 = nn.Upsample(scale_factor=(1, 2, 2), mode="trilinear")
-        self.conv3 = _make_conv(4 * C, 4 * C)
-        self.conv3c = _make_conv(4 * C, 2 * C)
+        self.conv3 = _make_conv(C, C)
+        self.conv3c = _make_conv(C, C)
         self.upsample2 = nn.Upsample(scale_factor=(2, 2, 2), mode="trilinear")
-        self.conv2 = _make_conv(2 * C, 2 * C)
-        self.conv2c = _make_conv(2 * C, C)
+        self.conv2 = _make_conv(C, C)
+        self.conv2c = _make_conv(C, C)
         self.upsample1 = nn.Upsample(scale_factor=(2, 2, 2), mode="trilinear")
         self.conv1 = _make_conv(C, C)
         self.conv1c = _make_conv(C, C)

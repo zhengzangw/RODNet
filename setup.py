@@ -1,8 +1,8 @@
 import os
 from setuptools import setup, find_packages
 
-import torch
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+# import torch
+# from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 os.environ['CFLAGS'] = '-Wno-deprecated-declarations'  # suppress warnings in debug mode
 

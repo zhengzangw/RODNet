@@ -3,7 +3,9 @@ import os
 import time
 
 import numpy as np
+import rodnet.models
 import torch
+import torch.nn as nn
 from cruw import CRUW
 from rodnet.core.post_processing import (
     ConfmapStack,
@@ -19,6 +21,7 @@ from rodnet.utils.load_configs import load_configs_from_file
 from rodnet.utils.solve_dir import create_random_model_name
 from rodnet.utils.visualization import visualize_test_img, visualize_test_img_wo_gt
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 """
 Example:
@@ -51,6 +54,7 @@ def parse_args():
     parser.add_argument(
         "--symbol", action="store_true", help="use symbol or text+score"
     )
+    parser.add_argument("--parallel", action="store_true")
     parser.add_argument("--use_freq_channel", action="store_true")
     parser.add_argument("--log", action="store_true")
     args = parser.parse_args()
@@ -70,18 +74,8 @@ if __name__ == "__main__":
     range_grid = dataset.range_grid
     angle_grid = dataset.angle_grid
 
-    model_configs = config_dict["model_cfg"]
-
-    if model_configs["type"] == "CDC":
-        from rodnet.models import RODNetCDC as RODNet
-    elif model_configs["type"] == "HG":
-        from rodnet.models import RODNetHG as RODNet
-    elif model_configs["type"] == "HGwI":
-        from rodnet.models import RODNetHGwI as RODNet
-    elif model_configs["type"] == "C21D":
-        from rodnet.models import RODNetC21D as RODNet
-    else:
-        raise NotImplementedError
+    model_cfg = config_dict["model_cfg"]
+    RODNet = rodnet.models.get_model(model_cfg["type"])
 
     # parameter settings
     dataset_configs = config_dict["dataset_cfg"]
@@ -96,8 +90,8 @@ if __name__ == "__main__":
         radar_configs["ramap_rsize"],
         radar_configs["ramap_asize"],
     )
-    if "stacked_num" in model_configs:
-        stacked_num = model_configs["stacked_num"]
+    if "stacked_num" in model_cfg:
+        stacked_num = model_cfg["stacked_num"]
     else:
         stacked_num = None
 
@@ -111,18 +105,23 @@ if __name__ == "__main__":
         n_class_test += 1
     if args.use_freq_channel:
         n_class_test += 2
+    is_cls = False
 
-    print("Building model ... (%s)" % model_configs)
-    if model_configs["type"] == "CDC":
-        rodnet = RODNet(n_class_test).cuda()
-    elif model_configs["type"] == "C21D":
-        rodnet = RODNet(n_class_test).cuda()
-    elif model_configs["type"] == "HG":
-        rodnet = RODNet(n_class_test, stacked_num=stacked_num).cuda()
-    elif model_configs["type"] == "HGwI":
-        rodnet = RODNet(n_class_test, stacked_num=stacked_num).cuda()
+    print("Building model ... (%s)" % model_cfg)
+    if model_cfg["type"].startswith("cls"):
+        rodnet = RODNet(model_cfg["n_class"])
+        criterion = nn.CrossEntropyLoss()
+        is_cls = True
+    elif model_cfg["type"] in ["CDC", "C21D", "CDCD", "GSC", "GSCmp", "Resnet18"]:
+        rodnet = RODNet(n_class_test)
+    elif model_cfg["type"] in ["HG", "HGwI"]:
+        rodnet = RODNet(n_class_test, stacked_num=stacked_num)
     else:
         raise TypeError
+    if args.parallel:
+        rodnet = nn.DataParallel(rodnet).cuda()
+    else:
+        rodnet = rodnet.cuda()
 
     checkpoint = torch.load(checkpoint_path)
     if "optimizer_state_dict" in checkpoint:
@@ -132,7 +131,7 @@ if __name__ == "__main__":
     if "model_name" in checkpoint:
         model_name = checkpoint["model_name"]
     else:
-        model_name = create_random_model_name(model_configs["name"], checkpoint_path)
+        model_name = create_random_model_name(model_cfg["name"], checkpoint_path)
     rodnet.eval()
 
     test_res_dir = os.path.join(os.path.join(args.res_dir, model_name))
@@ -178,8 +177,9 @@ if __name__ == "__main__":
         f = open(os.path.join(seq_res_dir, "rod_res.txt"), "w")
         f.close()
 
-    for subset in seq_names:
+    for subset in tqdm(seq_names, leave=False):
         print(subset)
+        subset_vote = [0, 0, 0, 0]
         if not args.demo:
             crdata_test = CRDataset(
                 data_dir=args.data_dir,
@@ -221,7 +221,7 @@ if __name__ == "__main__":
             iter_.next = ConfmapStack(confmap_shape)
 
         load_tic = time.time()
-        for iter, data_dict in enumerate(dataloader):
+        for iter, data_dict in tqdm(enumerate(dataloader), leave=False):
             load_time = time.time() - load_tic
             data = data_dict["radar_data"]
             image_paths = data_dict["image_paths"][0]
@@ -239,94 +239,55 @@ if __name__ == "__main__":
             start_frame_id = int(start_frame_name)
             end_frame_id = int(end_frame_name)
 
-            print("Testing %s: %s-%s" % (seq_name, start_frame_name, end_frame_name))
+            # print("Testing %s: %s-%s" % (seq_name, start_frame_name, end_frame_name))
             tic = time.time()
+
             confmap_pred = rodnet(data.float().cuda())
-            if stacked_num is not None:
-                confmap_pred = (
-                    confmap_pred[-1].cpu().detach().numpy()
-                )  # (1, 4, 32, 128, 128)
+
+            if is_cls:
+                subset_vote[confmap_pred.cpu().detach().numpy().argmax()] += 1
             else:
-                confmap_pred = confmap_pred.cpu().detach().numpy()
-
-            if args.use_noise_channel or args.use_freq_channel:
-                confmap_pred = confmap_pred[:, :n_class, :, :, :]
-
-            infer_time = time.time() - tic
-            total_time += infer_time
-
-            iter_ = init_genConfmap
-            for i in range(confmap_pred.shape[2]):
-                if iter_.next is None and i != confmap_pred.shape[2] - 1:
-                    iter_.next = ConfmapStack(confmap_shape)
-                iter_.append(confmap_pred[0, :, i, :, :])
-                iter_ = iter_.next
-
-            process_tic = time.time()
-            for i in range(test_configs["test_stride"]):
-                total_count += 1
-                res_final = post_process_single_frame(
-                    init_genConfmap.confmap, dataset, config_dict
-                )
-                cur_frame_id = start_frame_id + i
-                write_dets_results_single_frame(
-                    res_final, cur_frame_id, save_path, dataset
-                )
-                confmap_pred_0 = init_genConfmap.confmap
-                res_final_0 = res_final
-                img_path = image_paths[i]
-                radar_input = chirp_amp(
-                    data.numpy()[0, :, i, :, :], radar_configs["data_type"]
-                )
-                fig_name = os.path.join(
-                    test_res_dir, seq_name, "rod_viz", "%010d.jpg" % (cur_frame_id)
-                )
-                if confmap_gt is not None:
-                    confmap_gt_0 = confmap_gt[0, :, i, :, :]
-                    visualize_test_img(
-                        fig_name,
-                        img_path,
-                        radar_input,
-                        confmap_pred_0,
-                        confmap_gt_0,
-                        res_final_0,
-                        dataset,
-                        sybl=sybl,
-                    )
+                if stacked_num is not None:
+                    confmap_pred = (
+                        confmap_pred[-1].cpu().detach().numpy()
+                    )  # (1, 4, 32, 128, 128)
                 else:
-                    visualize_test_img_wo_gt(
-                        fig_name,
-                        img_path,
-                        radar_input,
-                        confmap_pred_0,
-                        res_final_0,
-                        dataset,
-                        sybl=sybl,
-                    )
-                init_genConfmap = init_genConfmap.next
+                    confmap_pred = confmap_pred.cpu().detach().numpy()
 
-            if iter == len(dataloader) - 1:
-                offset = test_configs["test_stride"]
-                cur_frame_id = start_frame_id + offset
-                while init_genConfmap is not None:
+                if args.use_noise_channel or args.use_freq_channel:
+                    confmap_pred = confmap_pred[:, :n_class, :, :, :]
+
+                infer_time = time.time() - tic
+                total_time += infer_time
+
+                iter_ = init_genConfmap
+                for i in range(confmap_pred.shape[2]):
+                    if iter_.next is None and i != confmap_pred.shape[2] - 1:
+                        iter_.next = ConfmapStack(confmap_shape)
+                    iter_.append(confmap_pred[0, :, i, :, :])
+                    iter_ = iter_.next
+
+                process_tic = time.time()
+                for i in range(test_configs["test_stride"]):
                     total_count += 1
                     res_final = post_process_single_frame(
                         init_genConfmap.confmap, dataset, config_dict
                     )
+                    cur_frame_id = start_frame_id + i
                     write_dets_results_single_frame(
                         res_final, cur_frame_id, save_path, dataset
                     )
                     confmap_pred_0 = init_genConfmap.confmap
                     res_final_0 = res_final
-                    img_path = image_paths[offset]
+                    img_path = image_paths[i]
                     radar_input = chirp_amp(
-                        data.numpy()[0, :, offset, :, :], radar_configs["data_type"]
+                        data.numpy()[0, :, i, :, :], radar_configs["data_type"]
                     )
                     fig_name = os.path.join(
                         test_res_dir, seq_name, "rod_viz", "%010d.jpg" % (cur_frame_id)
                     )
                     if confmap_gt is not None:
-                        confmap_gt_0 = confmap_gt[0, :, offset, :, :]
+                        confmap_gt_0 = confmap_gt[0, :, i, :, :]
                         visualize_test_img(
                             fig_name,
                             img_path,
@@ -348,18 +309,68 @@ if __name__ == "__main__":
                             sybl=sybl,
                         )
                     init_genConfmap = init_genConfmap.next
-                    offset += 1
-                    cur_frame_id += 1
 
-            if init_genConfmap is None:
-                init_genConfmap = ConfmapStack(confmap_shape)
+                if iter == len(dataloader) - 1:
+                    offset = test_configs["test_stride"]
+                    cur_frame_id = start_frame_id + offset
+                    while init_genConfmap is not None:
+                        total_count += 1
+                        res_final = post_process_single_frame(
+                            init_genConfmap.confmap, dataset, config_dict
+                        )
+                        write_dets_results_single_frame(
+                            res_final, cur_frame_id, save_path, dataset
+                        )
+                        confmap_pred_0 = init_genConfmap.confmap
+                        res_final_0 = res_final
+                        img_path = image_paths[offset]
+                        radar_input = chirp_amp(
+                            data.numpy()[0, :, offset, :, :], radar_configs["data_type"]
+                        )
+                        fig_name = os.path.join(
+                            test_res_dir,
+                            seq_name,
+                            "rod_viz",
+                            "%010d.jpg" % (cur_frame_id),
+                        )
+                        if confmap_gt is not None:
+                            confmap_gt_0 = confmap_gt[0, :, offset, :, :]
+                            visualize_test_img(
+                                fig_name,
+                                img_path,
+                                radar_input,
+                                confmap_pred_0,
+                                confmap_gt_0,
+                                res_final_0,
+                                dataset,
+                                sybl=sybl,
+                            )
+                        else:
+                            visualize_test_img_wo_gt(
+                                fig_name,
+                                img_path,
+                                radar_input,
+                                confmap_pred_0,
+                                res_final_0,
+                                dataset,
+                                sybl=sybl,
+                            )
+                        init_genConfmap = init_genConfmap.next
+                        offset += 1
+                        cur_frame_id += 1
 
-            proc_time = time.time() - process_tic
-            print(
-                "Load time: %.4f | Inference time: %.4f | Process time: %.4f"
-                % (load_time, infer_time, proc_time)
-            )
+                if init_genConfmap is None:
+                    init_genConfmap = ConfmapStack(confmap_shape)
 
-            load_tic = time.time()
+                proc_time = time.time() - process_tic
+                # print(
+                #     "Load time: %.4f | Inference time: %.4f | Process time: %.4f"
+                #     % (load_time, infer_time, proc_time)
+                # )
 
-    print("ave time: %f" % (total_time / total_count))
+                load_tic = time.time()
+        if is_cls:
+            print(subset_vote)
+
+    if not is_cls:
+        print("ave time: %f" % (total_time / total_count))

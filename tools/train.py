@@ -44,14 +44,15 @@ def parse_args():
     parser.add_argument(
         "--use_noise_channel", action="store_true", help="use noise channel or not"
     )
-    parser.add_argument(
-        "--use_freq_channel", action="store_true"
-    )
+    parser.add_argument("--use_freq_channel", action="store_true")
+    parser.add_argument("--parallel", action="store_true")
+    parser.add_argument("--seq_type", type=str, default=None)
     args = parser.parse_args()
     return args
 
 
 if __name__ == "__main__":
+    # prepare
     args = parse_args()
     config_dict = load_configs_from_file(args.config)
     dataset = CRUW(
@@ -83,9 +84,9 @@ if __name__ == "__main__":
             model_cfg["name"], train_model_path
         )
 
-    train_viz_path = os.path.join(model_dir, "train_viz")
-    if not os.path.exists(train_viz_path):
-        os.makedirs(train_viz_path)
+    # train_viz_path = os.path.join(model_dir, "train_viz")
+    # if not os.path.exists(train_viz_path):
+    #     os.makedirs(train_viz_path)
 
     writer = SummaryWriter(model_dir)
     save_config_dict = {
@@ -105,6 +106,11 @@ if __name__ == "__main__":
     n_epoch = config_dict["train_cfg"]["n_epoch"]
     batch_size = config_dict["train_cfg"]["batch_size"]
     lr = config_dict["train_cfg"]["lr"]
+    if "optim" in config_dict:
+        opt = config_dict["optim"]
+    else:
+        opt = "Adam"
+    is_cls = False
     if "stacked_num" in model_cfg:
         stacked_num = model_cfg["stacked_num"]
     else:
@@ -115,47 +121,20 @@ if __name__ == "__main__":
         % ("save_memory" if args.save_memory else "normal")
     )
 
-    if not args.save_memory:
-        crdata_train = CRDataset(
-            data_dir=args.data_dir,
-            dataset=dataset,
-            config_dict=config_dict,
-            split="train",
-            noise_channel=args.use_noise_channel,
-            freq_channel=args.use_freq_channel
-        )
-        seq_names = crdata_train.seq_names
-        index_mapping = crdata_train.index_mapping
-        dataloader = DataLoader(
-            crdata_train, batch_size, shuffle=True, num_workers=0, collate_fn=cr_collate
-        )
-
-        # crdata_valid = CRDataset(os.path.join(args.data_dir, 'data_details'),
-        #                          os.path.join(args.data_dir, 'confmaps_gt'),
-        #                          win_size=win_size, set_type='valid', stride=8)
-        # seq_names_valid = crdata_valid.seq_names
-        # index_mapping_valid = crdata_valid.index_mapping
-        # dataloader_valid = DataLoader(crdata_valid, batch_size=batch_size, shuffle=True, num_workers=0)
-
-    else:
-        crdata_train = CRDatasetSM(
-            data_root=args.data_dir,
-            config_dict=config_dict,
-            split="train",
-            noise_channel=args.use_noise_channel,
-        )
-        seq_names = crdata_train.seq_names
-        index_mapping = crdata_train.index_mapping
-        dataloader = CRDataLoader(
-            crdata_train, shuffle=True, noise_channel=args.use_noise_channel, freq_channel=args.use_freq_channel
-        )
-
-        # crdata_valid = CRDatasetSM(os.path.join(args.data_dir, 'data_details'),
-        #                          os.path.join(args.data_dir, 'confmaps_gt'),
-        #                          win_size=win_size, set_type='train', stride=8, is_Memory_Limit=True)
-        # seq_names_valid = crdata_valid.seq_names
-        # index_mapping_valid = crdata_valid.index_mapping
-        # dataloader_valid = CRDataLoader(crdata_valid, batch_size=batch_size, shuffle=True)
+    crdata_train = CRDataset(
+        data_dir=args.data_dir,
+        dataset=dataset,
+        config_dict=config_dict,
+        split="train",
+        noise_channel=args.use_noise_channel,
+        freq_channel=args.use_freq_channel,
+        seq_type=args.seq_type,
+    )
+    seq_names = crdata_train.seq_names
+    index_mapping = crdata_train.index_mapping
+    dataloader = DataLoader(
+        crdata_train, batch_size, shuffle=True, num_workers=0, collate_fn=cr_collate
+    )
 
     n_class_train = n_class
     if args.use_noise_channel:
@@ -164,15 +143,32 @@ if __name__ == "__main__":
         n_class_train += 2
 
     print("Building model ... (%s)" % model_cfg)
-    if model_cfg["type"] in ["CDC", "C21D", "CDCD", "GSC"]:
-        rodnet = RODNet(n_class_train).cuda()
+    if model_cfg["type"].startswith("cls"):
+        rodnet = RODNet(model_cfg["n_class"])
+        criterion = nn.CrossEntropyLoss()
+        is_cls = True
+    elif model_cfg["type"] in ["CDC", "C21D", "CDCD", "GSC", "GSCmp", "Resnet18"]:
+        rodnet = RODNet(n_class_train)
         criterion = nn.MSELoss()
     elif model_cfg["type"] in ["HG", "HGwI"]:
-        rodnet = RODNet(n_class_train, stacked_num=stacked_num).cuda()
+        rodnet = RODNet(n_class_train, stacked_num=stacked_num)
         criterion = nn.BCELoss()
     else:
         raise TypeError
-    optimizer = optim.Adam(rodnet.parameters(), lr=lr)
+    if args.parallel:
+        rodnet = nn.DataParallel(rodnet).cuda()
+    else:
+        rodnet = rodnet.cuda()
+    criterion = criterion.cuda()
+
+    if opt == "Adam":
+        optimizer = optim.Adam(rodnet.parameters(), lr=lr)
+    elif opt == "SGD":
+        optimizer = optim.SGD(
+            rodnet.parameters(), lr=lr, momentum=0.9, weight_decay=1e-5
+        )
+    else:
+        raise NotImplementedError
     scheduler = StepLR(
         optimizer, step_size=config_dict["train_cfg"]["lr_step"], gamma=0.1
     )
@@ -182,12 +178,12 @@ if __name__ == "__main__":
         checkpoint = torch.load(cp_path)
         if "optimizer_state_dict" in checkpoint:
             rodnet.load_state_dict(checkpoint["model_state_dict"])
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            epoch_start = checkpoint["epoch"] + 1
-            iter_start = checkpoint["iter"] + 1
-            loss_cp = checkpoint["loss"]
-            if "iter_count" in checkpoint:
-                iter_count = checkpoint["iter_count"]
+            # optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            # epoch_start = checkpoint["epoch"] + 1
+            # iter_start = checkpoint["iter"] + 1
+            # loss_cp = checkpoint["loss"]
+            # if "iter_count" in checkpoint:
+            #     iter_count = checkpoint["iter_count"]
         else:
             rodnet.load_state_dict(checkpoint)
 
@@ -203,38 +199,30 @@ if __name__ == "__main__":
     for epoch in range(epoch_start, n_epoch):
 
         tic_load = time.time()
-        # if epoch == epoch_start:
-        #     dataloader_start = iter_start
-        # else:
-        #     dataloader_start = 0
 
         for iter, data_dict in enumerate(dataloader):
 
             data = data_dict["radar_data"]
             image_paths = data_dict["image_paths"]
             confmap_gt = data_dict["anno"]["confmaps"]
-
-            if not data_dict["status"]:
-                # in case load npy fail
-                print("Warning: Loading NPY data failed! Skip this iteration")
-                tic_load = time.time()
-                continue
-
+            seq_type = data_dict["seq_type"]
             tic = time.time()
             optimizer.zero_grad()  # zero the parameter gradients
+
             confmap_preds = rodnet(data.float().cuda())
 
             loss_confmap = 0
-            if stacked_num is not None:
+            if is_cls:
+                loss_confmap = criterion(confmap_preds, seq_type.cuda())
+            elif stacked_num is not None:
                 for i in range(stacked_num):
                     loss_cur = criterion(confmap_preds[i], confmap_gt.float().cuda())
                     loss_confmap += loss_cur
-                loss_confmap.backward()
-                optimizer.step()
             else:
                 loss_confmap = criterion(confmap_preds, confmap_gt.float().cuda())
-                loss_confmap.backward()
-                optimizer.step()
+
+            loss_confmap.backward()
+            optimizer.step()
 
             if iter % config_dict["train_cfg"]["log_step"] == 0:
                 # print statistics
@@ -262,32 +250,24 @@ if __name__ == "__main__":
 
                 if stacked_num is not None:
                     writer.add_scalar("loss/loss_all", loss_confmap.item(), iter_count)
-                    confmap_pred = confmap_preds[stacked_num - 1].cpu().detach().numpy()
+                    # confmap_pred = confmap_preds[stacked_num - 1].cpu().detach().numpy()
                 else:
                     writer.add_scalar("loss/loss_all", loss_confmap.item(), iter_count)
-                    confmap_pred = confmap_preds.cpu().detach().numpy()
-                if "mnet_cfg" in model_cfg:
-                    chirp_amp_curr = chirp_amp(
-                        data.numpy()[0, :, 0, 0, :, :], radar_configs["data_type"]
-                    )
-                else:
-                    chirp_amp_curr = chirp_amp(
-                        data.numpy()[0, :, 0, :, :], radar_configs["data_type"]
-                    )
+                    # confmap_pred = confmap_preds.cpu().detach().numpy()
 
                 # draw train images
-                fig_name = os.path.join(
-                    train_viz_path,
-                    "%03d_%010d_%06d.png" % (epoch + 1, iter_count, iter + 1),
-                )
-                img_path = image_paths[0][0]
-                visualize_train_img(
-                    fig_name,
-                    img_path,
-                    chirp_amp_curr,
-                    confmap_pred[0, :n_class, 0, :, :],
-                    confmap_gt[0, :n_class, 0, :, :],
-                )
+                # fig_name = os.path.join(
+                #     train_viz_path,
+                #     "%03d_%010d_%06d.png" % (epoch + 1, iter_count, iter + 1),
+                # )
+                # img_path = image_paths[0][0]
+                # visualize_train_img(
+                #     fig_name,
+                #     img_path,
+                #     chirp_amp_curr,
+                #     confmap_pred[0, :n_class, 0, :, :],
+                #     confmap_gt[0, :n_class, 0, :, :],
+                # )
 
             if (iter + 1) % config_dict["train_cfg"]["save_step"] == 0:
                 # validate current model
