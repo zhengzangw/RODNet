@@ -149,10 +149,10 @@ class BasicStem(nn.Sequential):
     """The default conv-batchnorm-relu stem
     """
 
-    def __init__(self):
+    def __init__(self, n_channel=2):
         super(BasicStem, self).__init__(
             nn.Conv3d(
-                CHANNELS,
+                n_channel,
                 64,
                 kernel_size=(3, 7, 7),
                 stride=(1, 2, 2),
@@ -168,10 +168,10 @@ class R2Plus1dStem(nn.Sequential):
     """R(2+1)D stem is different than the default one as it uses separated 3D convolution
     """
 
-    def __init__(self):
+    def __init__(self, n_channel=2):
         super(R2Plus1dStem, self).__init__(
             nn.Conv3d(
-                CHANNELS,
+                n_channel,
                 45,
                 kernel_size=(1, 7, 7),
                 stride=(1, 2, 2),
@@ -201,6 +201,7 @@ class VideoResNet(nn.Module):
         layers,
         stem,
         num_classes=400,
+        n_channel=2,
         zero_init_residual=False,
     ):
         """Generic resnet video generator.
@@ -216,7 +217,7 @@ class VideoResNet(nn.Module):
         super(VideoResNet, self).__init__()
         self.inplanes = 64
 
-        self.stem = stem()
+        self.stem = stem(n_channel)
 
         self.layer1 = self._make_layer(block, conv_makers[0], 64, layers[0], stride=1)
         self.layer2 = self._make_layer(block, conv_makers[1], 128, layers[1], stride=2)
@@ -382,15 +383,27 @@ def _make_conv(
 class ResnetDecoder(nn.Module):
     def __init__(self, num_class):
         super(ResnetDecoder, self).__init__()
-        self.upsample4 = nn.Upsample(scale_factor=(2, 2, 2), mode="trilinear")
-        self.upsample3 = nn.Upsample(scale_factor=(2, 2, 2), mode="trilinear")
-        self.upsample2 = nn.Upsample(scale_factor=(2, 2, 2), mode="trilinear")
-        self.upsample1 = nn.Upsample(scale_factor=(1, 2, 2), mode="trilinear")
+        self.upsample4 = nn.Upsample(
+            scale_factor=(2, 2, 2), mode="trilinear", align_corners=False
+        )
+        self.upsample3 = nn.Upsample(
+            scale_factor=(2, 2, 2), mode="trilinear", align_corners=False
+        )
+        self.upsample2 = nn.Upsample(
+            scale_factor=(2, 2, 2), mode="trilinear", align_corners=False
+        )
+        self.upsample1 = nn.Upsample(
+            scale_factor=(1, 2, 2), mode="trilinear", align_corners=False
+        )
 
         self.conv4 = _make_conv(512, 256)
         self.conv3 = _make_conv(256, 128)
         self.conv2 = _make_conv(128, 64)
         self.conv1 = _make_conv(64, num_class)
+
+        self.conv_x3 = _make_conv(256, 512)
+        self.conv_x2 = _make_conv(128, 256)
+        self.conv_x1 = _make_conv(64, 128)
 
         self._initialize_weights()
 
@@ -400,12 +413,80 @@ class ResnetDecoder(nn.Module):
         # x3 [-1, 256, 4, 16, 16]
         # x4 [-1, 512, 2, 8, 8]
         x = self.upsample4(x4)  # [-1, 512, 4, 16, 16]
-        x = self.conv4(x)  # [-1, 256, 4, 16, 16]
-        x = self.upsample3(x + x3)  # [-1, 256, 8, 32, 32]
-        x = self.conv3(x)  # [-1, 128, 8, 32, 32]
-        x = self.upsample2(x + x2)  # [-1, 128, 16, 64, 64]
-        x = self.conv2(x)  # [-1, 64, 16, 64, 64]
-        x = self.upsample1(x + x1)  # [-1, 64, 16, 128, 128]
+        x3 = self.conv_x3(x3)  # [-1, 512, 4, 16, 16]
+        x = self.conv4(x + x3)  # [-1, 256, 4, 16, 16]
+
+        x = self.upsample3(x)  # [-1, 256, 8, 32, 32]
+        x2 = self.conv_x2(x2)  # [-1, 256, 8, 32, 32]
+        x = self.conv3(x + x2)  # [-1, 128, 8, 32, 32]
+
+        x = self.upsample2(x)  # [-1, 128, 16, 64, 64]
+        x1 = self.conv_x1(x1)
+        x = self.conv2(x + x1)  # [-1, 64, 16, 64, 64]
+
+        x = self.upsample1(x)  # [-1, 64, 16, 128, 128]
+        x = self.conv1(x)  # [-1, n_cls, 16, 128, 128]
+        return x
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm3d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+
+
+class Resnet3Decoder(nn.Module):
+    def __init__(self, num_class):
+        super(ResnetDecoder, self).__init__()
+        self.upsample4 = nn.Upsample(
+            scale_factor=(2, 2, 2), mode="trilinear", align_corners=False
+        )
+        self.upsample3 = nn.Upsample(
+            scale_factor=(2, 2, 2), mode="trilinear", align_corners=False
+        )
+        self.upsample2 = nn.Upsample(
+            scale_factor=(2, 2, 2), mode="trilinear", align_corners=False
+        )
+        self.upsample1 = nn.Upsample(
+            scale_factor=(1, 2, 2), mode="trilinear", align_corners=False
+        )
+
+        self.conv4 = _make_conv(512, 256)
+        self.conv3 = _make_conv(256, 128)
+        self.conv2 = _make_conv(128, 64)
+        self.conv1 = _make_conv(64, num_class)
+
+        self.conv_x3 = _make_conv(256, 512)
+        self.conv_x2 = _make_conv(128, 256)
+        self.conv_x1 = _make_conv(64, 128)
+
+        self._initialize_weights()
+
+    def forward(self, x1, x2, x3, x4):
+        # x1 [-1, 64, 16, 64, 64]
+        # x2 [-1, 128, 8, 32, 32]
+        # x3 [-1, 256, 4, 16, 16]
+        # x4 [-1, 512, 2, 8, 8]
+        x = self.upsample4(x4)  # [-1, 512, 4, 16, 16]
+        x3 = self.conv_x3(x3)  # [-1, 512, 4, 16, 16]
+        x = self.conv4(x + x3)  # [-1, 256, 4, 16, 16]
+
+        x = self.upsample3(x)  # [-1, 256, 8, 32, 32]
+        x2 = self.conv_x2(x2)  # [-1, 256, 8, 32, 32]
+        x = self.conv3(x + x2)  # [-1, 128, 8, 32, 32]
+
+        x = self.upsample2(x)  # [-1, 128, 16, 64, 64]
+        x1 = self.conv_x1(x1)
+        x = self.conv2(x + x1)  # [-1, 64, 16, 64, 64]
+
+        x = self.upsample1(x)  # [-1, 64, 16, 128, 128]
         x = self.conv1(x)  # [-1, n_cls, 16, 128, 128]
         return x
 

@@ -1,4 +1,3 @@
-# RUN on a25:2
 dataset_cfg = dict(
     dataset_name="rod2021v",
     base_root="./rod2021v",
@@ -11,7 +10,7 @@ dataset_cfg = dict(
 
 model_cfg = dict(
     type="CDC",
-    name="valid_cdc_lr4_b4",
+    name="ground_cdc_adam_lr4_fft",
     max_dets=20,
     peak_thres=0.3,
     ols_thres=0.3,
@@ -20,21 +19,14 @@ model_cfg = dict(
 )
 
 train_cfg = dict(
-    n_epoch=10,
-    batch_size=4,
-    lr=0.0001,
-    lr_step=10,
+    batch_size=3*16,
+    n_epoch=100,
+    lr=1e-4,
+    lr_step=10, # 1e-4 -> 1e-14
+    log_step=20,
+    # others
     win_size=16,
     train_step=1,
     train_stride=4,
-    log_step=100,
     save_step=10000,
-)
-test_cfg = dict(
-    test_step=1,
-    test_stride=8,
-    rr_min=1.0,  # min radar range
-    rr_max=20.0,  # max radar range
-    ra_min=-60.0,  # min radar angle
-    ra_max=60.0,  # max radar angle
 )

@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import os
 import time
 
@@ -16,9 +17,31 @@ from rodnet.datasets.CRDatasetSM import CRDatasetSM
 from rodnet.utils.load_configs import load_configs_from_file
 from rodnet.utils.solve_dir import create_dir_for_new_model
 from rodnet.utils.visualization import visualize_train_img
-from torch.optim.lr_scheduler import StepLR
+from rodnet.warmup_scheduler.scheduler import GradualWarmupScheduler
+from torch.optim.lr_scheduler import (
+    CosineAnnealingLR,
+    CosineAnnealingWarmRestarts,
+    LambdaLR,
+    StepLR,
+)
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+
+NUM_WORKERS = 4
+
+
+def set_args(name, args, model_cfg):
+    val = None
+    if name in model_cfg:
+        val = model_cfg[name]
+    if getattr(args, name) is True:
+        val = True
+    return val
+
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group["lr"]
 
 
 def parse_args():
@@ -36,17 +59,18 @@ def parse_args():
     parser.add_argument(
         "--resume_from", type=str, default=None, help="path to the trained model"
     )
+    parser.add_argument("--resume_opt", action="store_true")
     parser.add_argument(
         "--save_memory",
         action="store_true",
         help="use customized dataloader to save memory",
     )
-    parser.add_argument(
-        "--use_noise_channel", action="store_true", help="use noise channel or not"
-    )
+    parser.add_argument("--use_noise_channel")
     parser.add_argument("--use_freq_channel", action="store_true")
+    parser.add_argument("--use_fft_channel", action="store_true")
     parser.add_argument("--parallel", action="store_true")
     parser.add_argument("--seq_type", type=str, default=None)
+    parser.add_argument("--double_hard", action="store_true")
     args = parser.parse_args()
     return args
 
@@ -54,7 +78,22 @@ def parse_args():
 if __name__ == "__main__":
     # prepare
     args = parse_args()
+    train_model_path = args.log_dir
+    if not os.path.exists(args.log_dir):
+        os.makedirs(args.log_dir)
+    is_cls = False
+
+    # load config
     config_dict = load_configs_from_file(args.config)
+    model_cfg = config_dict["model_cfg"]
+    train_cfg = config_dict["train_cfg"]
+    RODNet = rodnet.models.get_model(model_cfg["type"])
+    n_epoch = train_cfg["n_epoch"]
+    batch_size = train_cfg["batch_size"]
+    lr = train_cfg["lr"]
+    aug_crop = True if "aug" in train_cfg else False
+
+    # load dataset
     dataset = CRUW(
         data_root=config_dict["dataset_cfg"]["base_root"],
         sensor_config_name="sensor_config_rod2021",
@@ -62,19 +101,40 @@ if __name__ == "__main__":
     radar_configs = dataset.sensor_cfg.radar_cfg
     range_grid = dataset.range_grid
     angle_grid = dataset.angle_grid
+    n_class_train = n_class = dataset.object_cfg.n_class
+    channel = 2
 
-    model_cfg = config_dict["model_cfg"]
-    RODNet = rodnet.models.get_model(model_cfg["type"])
+    # Training skills
+    use_noise_channel = set_args("use_noise_channel", args, model_cfg)
+    use_freq_channel = set_args("use_freq_channel", args, model_cfg)
+    use_fft_channel = set_args("use_fft_channel", args, model_cfg)
+    double_hard = set_args("double_hard", args, model_cfg)
 
-    if not os.path.exists(args.log_dir):
-        os.makedirs(args.log_dir)
-    train_model_path = args.log_dir
+    if use_noise_channel:
+        n_class_train += 1
+        print("Use noise channel")
+    if use_freq_channel:
+        n_class_train += 2
+        print("Use freq channel")
+    if use_fft_channel:
+        channel += 2
+        print("Use fft channel")
+    if "optim" in config_dict:
+        opt = config_dict["optim"]
+    else:
+        opt = "Adam"
+    print(f"Use optimizer: {opt}")
+    if "stacked_num" in model_cfg:
+        stacked_num = model_cfg["stacked_num"]
+    else:
+        stacked_num = None
 
     # create / load models
     cp_path = None
     epoch_start = 0
     iter_start = 0
-    if args.resume_from is not None and os.path.exists(args.resume_from):
+    if args.resume_from is not None:
+        assert os.path.exists(args.resume_from)
         cp_path = args.resume_from
         model_dir, model_name = create_dir_for_new_model(
             model_cfg["name"], train_model_path
@@ -84,10 +144,7 @@ if __name__ == "__main__":
             model_cfg["name"], train_model_path
         )
 
-    # train_viz_path = os.path.join(model_dir, "train_viz")
-    # if not os.path.exists(train_viz_path):
-    #     os.makedirs(train_viz_path)
-
+    # logger
     writer = SummaryWriter(model_dir)
     save_config_dict = {
         "args": vars(args),
@@ -102,53 +159,43 @@ if __name__ == "__main__":
     with open(train_log_name, "w"):
         pass
 
-    n_class = dataset.object_cfg.n_class
-    n_epoch = config_dict["train_cfg"]["n_epoch"]
-    batch_size = config_dict["train_cfg"]["batch_size"]
-    lr = config_dict["train_cfg"]["lr"]
-    if "optim" in config_dict:
-        opt = config_dict["optim"]
-    else:
-        opt = "Adam"
-    is_cls = False
-    if "stacked_num" in model_cfg:
-        stacked_num = model_cfg["stacked_num"]
-    else:
-        stacked_num = None
-
     print(
         "Building dataloader ... (Mode: %s)"
         % ("save_memory" if args.save_memory else "normal")
     )
 
+    if aug_crop:
+        print("Use video mix augmentation.")
     crdata_train = CRDataset(
         data_dir=args.data_dir,
         dataset=dataset,
         config_dict=config_dict,
         split="train",
-        noise_channel=args.use_noise_channel,
-        freq_channel=args.use_freq_channel,
+        noise_channel=use_noise_channel,
+        freq_channel=use_freq_channel,
+        fft_channel=use_fft_channel,
         seq_type=args.seq_type,
+        aug_crop=aug_crop,
+        double_hard=double_hard,
     )
     seq_names = crdata_train.seq_names
     index_mapping = crdata_train.index_mapping
     dataloader = DataLoader(
-        crdata_train, batch_size, shuffle=True, num_workers=0, collate_fn=cr_collate
+        crdata_train,
+        batch_size,
+        shuffle=True,
+        num_workers=NUM_WORKERS,
+        collate_fn=cr_collate,
     )
 
-    n_class_train = n_class
-    if args.use_noise_channel:
-        n_class_train += 1
-    if args.use_freq_channel:
-        n_class_train += 2
-
     print("Building model ... (%s)" % model_cfg)
+    print("Training config ... (%s)" % train_cfg)
     if model_cfg["type"].startswith("cls"):
         rodnet = RODNet(model_cfg["n_class"])
         criterion = nn.CrossEntropyLoss()
         is_cls = True
     elif model_cfg["type"] in ["CDC", "C21D", "CDCD", "GSC", "GSCmp", "Resnet18"]:
-        rodnet = RODNet(n_class_train)
+        rodnet = RODNet(n_class_train, n_channel=channel)
         criterion = nn.MSELoss()
     elif model_cfg["type"] in ["HG", "HGwI"]:
         rodnet = RODNet(n_class_train, stacked_num=stacked_num)
@@ -169,21 +216,37 @@ if __name__ == "__main__":
         )
     else:
         raise NotImplementedError
-    scheduler = StepLR(
-        optimizer, step_size=config_dict["train_cfg"]["lr_step"], gamma=0.1
-    )
+
+    if "lr_step" in train_cfg:
+        scheduler = StepLR(optimizer, step_size=train_cfg["lr_step"], gamma=0.1)
+    elif "restart_epoch" in train_cfg:
+        scheduler = CosineAnnealingWarmRestarts(optimizer, train_cfg["restart_epoch"])
+    elif "warmup_cosine" in train_cfg:
+        print("Use warmup cosine scheduler.")
+        t = 10
+        T = 50
+        lambda1 = lambda epoch: (
+            (0.9 * epoch / t + 0.1)
+            if epoch < t
+            else 0.5 * (1 + math.cos(math.pi * (epoch - t) / (T - t)))
+        )
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
+    else:
+        raise NotImplementedError
 
     iter_count = 0
     if cp_path is not None:
+        print(f"Load from {cp_path}")
         checkpoint = torch.load(cp_path)
         if "optimizer_state_dict" in checkpoint:
             rodnet.load_state_dict(checkpoint["model_state_dict"])
-            # optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            # epoch_start = checkpoint["epoch"] + 1
-            # iter_start = checkpoint["iter"] + 1
-            # loss_cp = checkpoint["loss"]
-            # if "iter_count" in checkpoint:
-            #     iter_count = checkpoint["iter_count"]
+            if args.resume_opt:
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                epoch_start = checkpoint["epoch"] + 1
+                iter_start = checkpoint["iter"] + 1
+                loss_cp = checkpoint["loss"]
+                if "iter_count" in checkpoint:
+                    iter_count = checkpoint["iter_count"]
         else:
             rodnet.load_state_dict(checkpoint)
 
@@ -196,8 +259,7 @@ if __name__ == "__main__":
         "Number of iterations in each epoch: %d" % int(len(crdata_train) / batch_size)
     )
 
-    for epoch in range(epoch_start, n_epoch):
-
+    for epoch in range(epoch_start, n_epoch + 1):
         tic_load = time.time()
 
         for iter, data_dict in enumerate(dataloader):
@@ -208,7 +270,7 @@ if __name__ == "__main__":
             seq_type = data_dict["seq_type"]
             tic = time.time()
             optimizer.zero_grad()  # zero the parameter gradients
-
+            
             confmap_preds = rodnet(data.float().cuda())
 
             loss_confmap = 0
@@ -224,29 +286,22 @@ if __name__ == "__main__":
             loss_confmap.backward()
             optimizer.step()
 
-            if iter % config_dict["train_cfg"]["log_step"] == 0:
+            if iter % train_cfg["log_step"] == 0:
                 # print statistics
-                print(
-                    "epoch %2d, iter %4d: loss: %.8f | load time: %.4f | backward time: %.4f"
+                stats = (
+                    "epoch %2d, iter %4d: loss: %.8f | lr: %.8f | load time: %.4f | backward time: %.4f"
                     % (
                         epoch + 1,
                         iter + 1,
                         loss_confmap.item(),
+                        get_lr(optimizer),
                         tic - tic_load,
                         time.time() - tic,
                     )
                 )
+                print(stats)
                 with open(train_log_name, "a+") as f_log:
-                    f_log.write(
-                        "epoch %2d, iter %4d: loss: %.8f | load time: %.4f | backward time: %.4f\n"
-                        % (
-                            epoch + 1,
-                            iter + 1,
-                            loss_confmap.item(),
-                            tic - tic_load,
-                            time.time() - tic,
-                        )
-                    )
+                    f_log.write(stats + "\n")
 
                 if stacked_num is not None:
                     writer.add_scalar("loss/loss_all", loss_confmap.item(), iter_count)
@@ -269,7 +324,7 @@ if __name__ == "__main__":
                 #     confmap_gt[0, :n_class, 0, :, :],
                 # )
 
-            if (iter + 1) % config_dict["train_cfg"]["save_step"] == 0:
+            if (iter + 1) % train_cfg["save_step"] == 0:
                 # validate current model
                 # print("validing current model ...")
                 # validate()

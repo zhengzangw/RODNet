@@ -9,8 +9,8 @@ dataset_cfg = dict(
 )
 
 model_cfg = dict(
-    type="CDC",
-    name="valid_cdc_lr4_b16",
+    type="Resnet18",
+    name="adam_wc_resnet",
     max_dets=20,
     peak_thres=0.3,
     ols_thres=0.3,
@@ -18,21 +18,15 @@ model_cfg = dict(
 )
 
 train_cfg = dict(
-    n_epoch=20,
-    batch_size=16,
-    lr=0.0001,
-    lr_step=10,
+    batch_size=2*8,
+    n_epoch=50,
+    lr=1e-4,
+    warmup_cosine=True,
+    cropmix=True,
+    log_step=20,
+    # others
     win_size=16,
     train_step=1,
     train_stride=4,
-    log_step=50,
     save_step=10000,
-)
-test_cfg = dict(
-    test_step=1,
-    test_stride=8,
-    rr_min=1.0,  # min radar range
-    rr_max=20.0,  # max radar range
-    ra_min=-60.0,  # min radar angle
-    ra_max=60.0,  # max radar angle
 )

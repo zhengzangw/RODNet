@@ -1,10 +1,10 @@
 import torch.nn as nn
 
-from .backbones.c21d import RODEncode, RODDecode
+from .backbones.c21d import RODDecode, RODEncode
 
 
 class RODNetC21D(nn.Module):
-    def __init__(self, n_class):
+    def __init__(self, n_class, n_channel=2):
         super(RODNetC21D, self).__init__()
 
         self.c3d_encode = RODEncode()

@@ -20,8 +20,74 @@ def add_freq_channel(confmap, radar_data):
     return confmap
 
 
-def add_fft_channel(confmap, radar_data):
-    pass
+def add_fft_channel(radar_data):
+    radar_data_c = radar_data[:, :, :, 0] + radar_data[:, :, :, 1] * 1j
+    radar_data_fft = np.fft.fft(radar_data_c, axis=0)
+    radar_data_fft_r = np.real(radar_data_fft)
+    radar_data_fft_c = np.imag(radar_data_fft)
+    radar_data_fft = np.stack([radar_data_fft_r, radar_data_fft_c], axis=-1)
+    radar_data = np.concatenate([radar_data, radar_data_fft], axis=-1)
+    return radar_data
+
+
+def flipcoin(p):
+    return random.random() < p
+
+
+def cropmix(dict_1, dict_2):
+    radar1 = dict_1["radar_data"]
+    radar2 = dict_2["radar_data"]
+    confmap1 = dict_1["anno"]["confmaps"]
+    confmap2 = dict_2["anno"]["confmaps"]
+
+    W_x = random.randint(32, 96) #128
+    W_y = random.randint(32, 96) #128
+    x_l = random.randint(0, 127 - W_x)
+    y_l = random.randint(0, 127 - W_y)
+
+    radar1[:, :, x_l : x_l + W_x, y_l : y_l + W_y] = radar2[
+        :, :, x_l : x_l + W_x, y_l : y_l + W_y
+    ]
+    confmap1[:, :, x_l : x_l + W_x, y_l : y_l + W_y] = confmap2[
+        :, :, x_l : x_l + W_x, y_l : y_l + W_y
+    ]
+
+    dict_1["radar_data"] = radar1
+    dict_1["anno"]["confmaps"] = confmap1
+    return dict_1
+
+
+def mix(dict_1, dict_2):
+    radar1 = dict_1["radar_data"]
+    radar2 = dict_2["radar_data"]
+    confmap1 = dict_1["anno"]["confmaps"]
+    confmap2 = dict_2["anno"]["confmaps"]
+
+    alpha = random.random()
+    radar1 = radar1 * alpha + radar2 * (1 - alpha)
+    confmap1 = confmap1 * alpha + confmap2 * (1 - alpha)
+
+    dict_1["radar_data"] = radar1
+    dict_1["anno"]["confmaps"] = confmap1
+    return dict_1
+
+
+def noise(dict_1, dict_2):
+    radar1 = dict_1["radar_data"]
+    radar2 = dict_2["radar_data"]
+    confmap1 = dict_1["anno"]["confmaps"]
+    confmap2 = dict_2["anno"]["confmaps"]
+
+    channal = radar1.shape[0]
+    assert confmap1.shape[0] == 4
+    info_mask = confmap2[-1] < 0.99999999
+    info_mask = np.stack([info_mask] * channal)
+    radar2[info_mask] = 0
+    radar1 += radar2
+
+    dict_1["radar_data"] = radar1
+    dict_1["anno"]["confmaps"] = confmap1
+    return dict_1
 
 
 # seq, train, dynamic, scene
@@ -30,45 +96,45 @@ def add_fft_channel(confmap, radar_data):
 scene_id = {"PL": 0, "CR": 1, "CS": 2, "HW": 3}
 seq_info = {
     "2019_04_09_BMS1000": (1, 0, "PL"),
+    "2019_04_09_BMS1001": (1, 0, "PL"),
+    "2019_04_09_BMS1002": (1, 0, "PL"),
     "2019_04_09_PMS1000": (1, 0, "PL"),
-    "2019_04_30_MLMS000": (1, 0, "CR"),
+    "2019_04_09_PMS1001": (1, 0, "PL"),
+    "2019_04_09_PMS2000": (1, 0, "PL"),
+    "2019_04_09_PMS3000": (1, 0, "PL"),
+    "2019_04_09_CMS1002": (1, 0, "PL"),
     "2019_04_30_PBMS003": (1, 0, "PL"),
+    "2019_04_30_PM2S003": (1, 0, "PL"),
+    "2019_05_23_PM2S011": (1, 0, "PL"),
+    "2019_05_23_PM1S012": (1, 0, "PL"),
+    "2019_05_23_PM1S015": (1, 0, "PL"),
+    "2019_05_23_PM1S013": (1, 0, "PL"),
+    "2019_05_23_PM1S014": (1, 0, "PL"),
+    "2019_05_29_BM1S016": (1, 0, "PL"),
+    "2019_05_29_BM1S017": (1, 0, "PL"),
+    "2019_05_29_PBMS007": (1, 0, "PL"),
+    "2019_05_29_PM2S015": (1, 0, "PL"),
+    "2019_05_29_PM3S000": (1, 0, "PL"),
+    "2019_04_30_PBMS002": (1, 0, "PL"),
+    "2019_04_30_PM2S004": (1, 0, "PL"),
+    "2019_04_30_MLMS000": (1, 0, "CR"),
     "2019_05_09_BM1S008": (1, 0, "CR"),
     "2019_05_09_PCMS002": (1, 0, "CR"),
-    "2019_05_23_PM1S015": (1, 0, "PL"),
-    "2019_05_29_BM1S017": (1, 0, "PL"),
-    "2019_05_29_PM2S015": (1, 0, "PL"),
-    "2019_04_09_BMS1001": (1, 0, "PL"),
-    "2019_04_09_PMS1001": (1, 0, "PL"),
     "2019_04_30_MLMS001": (1, 0, "CR"),
     "2019_04_30_PCMS001": (1, 0, "CR"),
     "2019_05_09_CM1S004": (1, 0, "CR"),
-    "2019_05_23_PM1S012": (1, 0, "PL"),
-    "2019_05_23_PM2S011": (1, 0, "PL"),
     "2019_05_29_MLMS006": (1, 0, "CR"),
-    "2019_05_29_PM3S000": (1, 0, "PL"),
-    "2019_04_09_BMS1002": (1, 0, "PL"),
-    "2019_04_09_PMS2000": (1, 0, "PL"),
     "2019_04_30_MLMS002": (1, 0, "CR"),
-    "2019_04_30_PM2S003": (1, 0, "PL"),
     "2019_05_09_MLMS003": (1, 0, "CR"),
-    "2019_05_23_PM1S013": (1, 0, "PL"),
     "2019_05_29_BCMS000": (1, 0, "CR"),
-    "2019_05_29_PBMS007": (1, 0, "PL"),
-    "2019_04_09_CMS1002": (1, 0, "PL"),
-    "2019_04_09_PMS3000": (1, 0, "PL"),
-    "2019_04_30_PBMS002": (1, 0, "PL"),
-    "2019_04_30_PM2S004": (1, 0, "PL"),
     "2019_05_09_PBMS004": (1, 0, "CR"),
-    "2019_05_23_PM1S014": (1, 0, "PL"),
-    "2019_05_29_BM1S016": (1, 0, "PL"),
     "2019_05_29_PCMS005": (1, 0, "CR"),
-    "2019_09_29_ONRD011": (1, 1, "HW"),
-    "2019_09_29_ONRD006": (1, 1, "HW"),
-    "2019_09_29_ONRD005": (1, 1, "HW"),
     "2019_09_29_ONRD002": (1, 1, "CS"),
     "2019_09_29_ONRD013": (1, 1, "CS"),
     "2019_09_29_ONRD001": (1, 1, "CS"),
+    "2019_09_29_ONRD011": (1, 1, "HW"),
+    "2019_09_29_ONRD006": (1, 1, "HW"),
+    "2019_09_29_ONRD005": (1, 1, "HW"),
     # test
     "2019_05_28_CM1S013": (0, 0, "CR"),
     "2019_05_28_MLMS005": (0, 0, "PL"),
@@ -99,6 +165,18 @@ def seq_split(data_files, seq_type):
     return ret
 
 
+def double_hard_seq(data_files):
+    ret = []
+    for data_file in data_files:
+        seq_name = data_file.split(".")[0]
+        if seq_info[seq_name][1] == 1:
+            ret.append(data_file)
+            ret.append(data_file)
+        else:
+            ret.append(data_file)
+    return ret
+
+
 class CRDataset(data.Dataset):
     """
     Pytorch Dataloader for CR Dataset
@@ -122,9 +200,14 @@ class CRDataset(data.Dataset):
         subset=None,
         noise_channel=False,
         freq_channel=False,
+        fft_channel=False,
         seq_type=None,
+        aug_crop=False,
+        double_hard=False,
     ):
         # parameters settings
+        self.aug_crop = aug_crop
+        self.fft_channel = fft_channel
         self.data_dir = data_dir
         self.dataset = dataset
         self.config_dict = config_dict
@@ -142,15 +225,6 @@ class CRDataset(data.Dataset):
         self.noise_channel = noise_channel
         self.freq_channel = freq_channel
 
-        # Dataloader for MNet
-        if "mnet_cfg" in self.config_dict["model_cfg"]:
-            in_chirps, out_channels = self.config_dict["model_cfg"]["mnet_cfg"]
-            self.n_chirps = in_chirps
-            n_radar_chirps = self.config_dict["dataset_cfg"]["radar_cfg"]["n_chirps"]
-            self.chirp_ids = []
-            for c in range(in_chirps):
-                self.chirp_ids.append(int(n_radar_chirps / in_chirps * c))
-
         # dataset initialization
         self.image_paths = []
         self.radar_paths = []
@@ -165,6 +239,8 @@ class CRDataset(data.Dataset):
             self.data_files = list_pkl_filenames_from_prepared(data_dir, split)
         if seq_type is not None:
             self.data_files = seq_split(self.data_files, seq_type)
+        if double_hard:
+            self.data_files = double_hard_seq(self.data_files)
 
         self.seq_names = [name.split(".")[0] for name in self.data_files]
         self.n_seq = len(self.seq_names)
@@ -196,8 +272,7 @@ class CRDataset(data.Dataset):
         """Total number of data/label pairs"""
         return self.n_data
 
-    def __getitem__(self, index):
-
+    def get_item(self, index):
         seq_id, data_id = self.index_mapping[index]
         seq_name = self.seq_names[seq_id]
         seq_type = None
@@ -218,10 +293,6 @@ class CRDataset(data.Dataset):
             )
         else:
             chirp_id = 0
-
-        # Dataloader for MNet
-        if "mnet_cfg" in self.config_dict["model_cfg"]:
-            chirp_id = self.chirp_ids
 
         radar_configs = self.dataset.sensor_cfg.radar_cfg
         ramap_rsize = radar_configs["ramap_rsize"]
@@ -258,15 +329,21 @@ class CRDataset(data.Dataset):
                 )
             return data_dict
 
+        C = 2
+        if self.fft_channel:
+            C += 2
+            radar_npy_win = add_fft_channel(radar_npy_win)
         radar_npy_win = np.transpose(radar_npy_win, (3, 0, 1, 2))
+
         assert radar_npy_win.shape == (
-            2,
+            C,
             self.win_size,
             radar_configs["ramap_rsize"],
             radar_configs["ramap_asize"],
         )
 
         data_dict["radar_data"] = radar_npy_win
+        data_dict["aug"] = dict(crop=0, mix=0, noise=0)
 
         # Load annotations
         if len(self.confmaps) != 0:
@@ -298,5 +375,30 @@ class CRDataset(data.Dataset):
             data_dict["anno"] = dict(obj_infos=obj_info, confmaps=confmap_gt,)
         else:
             data_dict["anno"] = None
+        return data_dict
 
+    def rand_item(self):
+        ind = random.randint(0, len(self.index_mapping) - 1)
+        rand_dict = self.get_item(ind)
+        return rand_dict
+
+    def augmentation(self, data_dict):
+        if flipcoin(1 / 2):
+            data_dict = cropmix(data_dict, self.rand_item())
+            data_dict["aug"]["crop"] = 1
+        elif flipcoin(1 / 2):
+            data_dict = mix(data_dict, self.rand_item())
+            data_dict["aug"]["mix"] = 1
+        if flipcoin(1 / 2):
+            # noise
+            data_dict = noise(data_dict, self.rand_item())
+            data_dict["aug"]["noise"] = 1
+
+        return data_dict
+
+    def __getitem__(self, index):
+        # return data_dict["seq_type", "radar_data", "anno", "aug"]
+        data_dict = self.get_item(index)
+        if self.aug_crop:
+            data_dict = self.augmentation(data_dict)
         return data_dict

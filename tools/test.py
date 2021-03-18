@@ -30,6 +30,15 @@ Example:
 """
 
 
+def set_args(name, args, model_cfg):
+    val = None
+    if name in model_cfg:
+        val = model_cfg[name]
+    if getattr(args, name) is True:
+        val = True
+    return val
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Test RODNet.")
     parser.add_argument("--config", type=str, help="choose rodnet model configurations")
@@ -56,6 +65,7 @@ def parse_args():
     )
     parser.add_argument("--parallel", action="store_true")
     parser.add_argument("--use_freq_channel", action="store_true")
+    parser.add_argument("--use_fft_channel", action="store_true")
     parser.add_argument("--log", action="store_true")
     args = parser.parse_args()
     return args
@@ -99,12 +109,22 @@ if __name__ == "__main__":
         checkpoint_path = args.checkpoint
     else:
         raise ValueError("No trained model found.")
+    
+    use_noise_channel = set_args("use_noise_channel", args, model_cfg)
+    use_freq_channel = set_args("use_freq_channel", args, model_cfg)
+    use_fft_channel = set_args("use_fft_channel", args, model_cfg)
 
+    channel = 2
     n_class_test = n_class
-    if args.use_noise_channel:
+    if use_noise_channel:
         n_class_test += 1
-    if args.use_freq_channel:
+        print("Use noise channel")
+    if use_freq_channel:
         n_class_test += 2
+        print("Use freq channel")
+    if use_fft_channel:
+        channel += 2
+        print("Use fft channel")
     is_cls = False
 
     print("Building model ... (%s)" % model_cfg)
@@ -113,7 +133,7 @@ if __name__ == "__main__":
         criterion = nn.CrossEntropyLoss()
         is_cls = True
     elif model_cfg["type"] in ["CDC", "C21D", "CDCD", "GSC", "GSCmp", "Resnet18"]:
-        rodnet = RODNet(n_class_test)
+        rodnet = RODNet(n_class_test, n_channel=channel)
     elif model_cfg["type"] in ["HG", "HGwI"]:
         rodnet = RODNet(n_class_test, stacked_num=stacked_num)
     else:
@@ -180,27 +200,17 @@ if __name__ == "__main__":
     for subset in tqdm(seq_names, leave=False):
         print(subset)
         subset_vote = [0, 0, 0, 0]
-        if not args.demo:
-            crdata_test = CRDataset(
-                data_dir=args.data_dir,
-                dataset=dataset,
-                config_dict=config_dict,
-                split="test",
-                noise_channel=args.use_noise_channel,
-                freq_channel=args.use_freq_channel,
-                subset=subset,
-                is_random_chirp=False,
-            )
-        else:
-            crdata_test = CRDataset(
-                data_dir=args.data_dir,
-                dataset=dataset,
-                config_dict=config_dict,
-                split="demo",
-                noise_channel=args.use_noise_channel,
-                subset=subset,
-                is_random_chirp=False,
-            )
+        crdata_test = CRDataset(
+            data_dir=args.data_dir,
+            dataset=dataset,
+            config_dict=config_dict,
+            split="test",
+            noise_channel=use_noise_channel,
+            freq_channel=use_freq_channel,
+            fft_channel=use_fft_channel,
+            subset=subset,
+            is_random_chirp=False,
+        )
         print("Length of testing data: %d" % len(crdata_test))
         dataloader = DataLoader(
             crdata_test,
@@ -254,7 +264,7 @@ if __name__ == "__main__":
                 else:
                     confmap_pred = confmap_pred.cpu().detach().numpy()
 
-                if args.use_noise_channel or args.use_freq_channel:
+                if use_noise_channel or use_freq_channel:
                     confmap_pred = confmap_pred[:, :n_class, :, :, :]
 
                 infer_time = time.time() - tic
@@ -279,35 +289,35 @@ if __name__ == "__main__":
                     )
                     confmap_pred_0 = init_genConfmap.confmap
                     res_final_0 = res_final
-                    img_path = image_paths[i]
-                    radar_input = chirp_amp(
-                        data.numpy()[0, :, i, :, :], radar_configs["data_type"]
-                    )
-                    fig_name = os.path.join(
-                        test_res_dir, seq_name, "rod_viz", "%010d.jpg" % (cur_frame_id)
-                    )
-                    if confmap_gt is not None:
-                        confmap_gt_0 = confmap_gt[0, :, i, :, :]
-                        visualize_test_img(
-                            fig_name,
-                            img_path,
-                            radar_input,
-                            confmap_pred_0,
-                            confmap_gt_0,
-                            res_final_0,
-                            dataset,
-                            sybl=sybl,
-                        )
-                    else:
-                        visualize_test_img_wo_gt(
-                            fig_name,
-                            img_path,
-                            radar_input,
-                            confmap_pred_0,
-                            res_final_0,
-                            dataset,
-                            sybl=sybl,
-                        )
+                    # img_path = image_paths[i]
+                    # radar_input = chirp_amp(
+                    #     data.numpy()[0, :, i, :, :], radar_configs["data_type"]
+                    # )
+                    # fig_name = os.path.join(
+                    #     test_res_dir, seq_name, "rod_viz", "%010d.jpg" % (cur_frame_id)
+                    # )
+                    # if confmap_gt is not None:
+                    #     confmap_gt_0 = confmap_gt[0, :, i, :, :]
+                    #     visualize_test_img(
+                    #         fig_name,
+                    #         img_path,
+                    #         radar_input,
+                    #         confmap_pred_0,
+                    #         confmap_gt_0,
+                    #         res_final_0,
+                    #         dataset,
+                    #         sybl=sybl,
+                    #     )
+                    # else:
+                    #     visualize_test_img_wo_gt(
+                    #         fig_name,
+                    #         img_path,
+                    #         radar_input,
+                    #         confmap_pred_0,
+                    #         res_final_0,
+                    #         dataset,
+                    #         sybl=sybl,
+                    #     )
                     init_genConfmap = init_genConfmap.next
 
                 if iter == len(dataloader) - 1:
@@ -323,38 +333,38 @@ if __name__ == "__main__":
                         )
                         confmap_pred_0 = init_genConfmap.confmap
                         res_final_0 = res_final
-                        img_path = image_paths[offset]
-                        radar_input = chirp_amp(
-                            data.numpy()[0, :, offset, :, :], radar_configs["data_type"]
-                        )
-                        fig_name = os.path.join(
-                            test_res_dir,
-                            seq_name,
-                            "rod_viz",
-                            "%010d.jpg" % (cur_frame_id),
-                        )
-                        if confmap_gt is not None:
-                            confmap_gt_0 = confmap_gt[0, :, offset, :, :]
-                            visualize_test_img(
-                                fig_name,
-                                img_path,
-                                radar_input,
-                                confmap_pred_0,
-                                confmap_gt_0,
-                                res_final_0,
-                                dataset,
-                                sybl=sybl,
-                            )
-                        else:
-                            visualize_test_img_wo_gt(
-                                fig_name,
-                                img_path,
-                                radar_input,
-                                confmap_pred_0,
-                                res_final_0,
-                                dataset,
-                                sybl=sybl,
-                            )
+                        # img_path = image_paths[offset]
+                        # radar_input = chirp_amp(
+                        #     data.numpy()[0, :, offset, :, :], radar_configs["data_type"]
+                        # )
+                        # fig_name = os.path.join(
+                        #     test_res_dir,
+                        #     seq_name,
+                        #     "rod_viz",
+                        #     "%010d.jpg" % (cur_frame_id),
+                        # )
+                        # if confmap_gt is not None:
+                        #     confmap_gt_0 = confmap_gt[0, :, offset, :, :]
+                        #     visualize_test_img(
+                        #         fig_name,
+                        #         img_path,
+                        #         radar_input,
+                        #         confmap_pred_0,
+                        #         confmap_gt_0,
+                        #         res_final_0,
+                        #         dataset,
+                        #         sybl=sybl,
+                        #     )
+                        # else:
+                        #     visualize_test_img_wo_gt(
+                        #         fig_name,
+                        #         img_path,
+                        #         radar_input,
+                        #         confmap_pred_0,
+                        #         res_final_0,
+                        #         dataset,
+                        #         sybl=sybl,
+                        #     )
                         init_genConfmap = init_genConfmap.next
                         offset += 1
                         cur_frame_id += 1

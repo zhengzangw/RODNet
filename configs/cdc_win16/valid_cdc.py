@@ -1,8 +1,8 @@
 dataset_cfg = dict(
-    dataset_name="rod2021v",
-    base_root="./rod2021v",
-    data_root="./rod2021v/sequences",
-    anno_root="./rod2021v/annotations",
+    dataset_name="rod2021_valid",
+    base_root="./rod2021_valid",
+    data_root="./rod2021_valid/sequences",
+    anno_root="./rod2021_valid/annotations",
     anno_ext=".txt",
     train=dict(subdir="train",),
     test=dict(subdir="test",),
@@ -14,6 +14,7 @@ model_cfg = dict(
     max_dets=20,
     peak_thres=0.3,
     ols_thres=0.3,
+    use_noise_channel=True,
 )
 
 train_cfg = dict(

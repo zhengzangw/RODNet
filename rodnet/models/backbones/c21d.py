@@ -40,6 +40,8 @@ class RODEncode(nn.Module):
         self.conv3a = _make_conv(128, 256, (1, 1, 1))
         self.conv3b = _make_conv(256, 256, (1, 2, 2))
 
+        self._initialize_weights()
+
     def forward(self, x):
         x = self.conv1a(x)
         x = self.conv1b(x)
@@ -48,6 +50,19 @@ class RODEncode(nn.Module):
         x = self.conv3a(x)
         x = self.conv3b(x)
         return x
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm3d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
 
 
 class RODDecode(nn.Module):
