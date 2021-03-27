@@ -11,20 +11,20 @@ class RODEncode(nn.Module):
             stride=(1, 1, 1),
             padding=(4, 2, 2),
         )
-        self.conv1a_1 = nn.Conv3d(
-            in_channels=64,
-            out_channels=64,
-            kernel_size=(9, 5, 5),
-            stride=(1, 1, 1),
-            padding=(4, 2, 2),
-        )
-        self.conv1a_2 = nn.Conv3d(
-            in_channels=64,
-            out_channels=64,
-            kernel_size=(9, 5, 5),
-            stride=(1, 1, 1),
-            padding=(4, 2, 2),
-        )
+        # self.conv1a_1 = nn.Conv3d(
+        #     in_channels=64,
+        #     out_channels=64,
+        #     kernel_size=(9, 5, 5),
+        #     stride=(1, 1, 1),
+        #     padding=(4, 2, 2),
+        # )
+        # self.conv1a_2 = nn.Conv3d(
+        #     in_channels=64,
+        #     out_channels=64,
+        #     kernel_size=(9, 5, 5),
+        #     stride=(1, 1, 1),
+        #     padding=(4, 2, 2),
+        # )
         self.conv1b = nn.Conv3d(
             in_channels=64,
             out_channels=64,
@@ -61,8 +61,8 @@ class RODEncode(nn.Module):
             padding=(4, 2, 2),
         )
         self.bn1a = nn.BatchNorm3d(num_features=64)
-        self.bn1a_1 = nn.BatchNorm3d(num_features=64)
-        self.bn1a_2 = nn.BatchNorm3d(num_features=64)
+        # self.bn1a_1 = nn.BatchNorm3d(num_features=64)
+        # self.bn1a_2 = nn.BatchNorm3d(num_features=64)
         self.bn1b = nn.BatchNorm3d(num_features=64)
         self.bn2a = nn.BatchNorm3d(num_features=128)
         self.bn2b = nn.BatchNorm3d(num_features=128)

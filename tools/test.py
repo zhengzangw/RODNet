@@ -132,7 +132,7 @@ if __name__ == "__main__":
         rodnet = RODNet(model_cfg["n_class"])
         criterion = nn.CrossEntropyLoss()
         is_cls = True
-    elif model_cfg["type"] in ["CDC", "C21D", "CDCD", "GSC", "GSCmp", "Resnet18"]:
+    elif model_cfg["type"] in ["CDC", "C21D", "CDCD", "GSC", "GSCmp", "Resnet18", "Resnet18b", "Resnet18c"]:
         rodnet = RODNet(n_class_test, n_channel=channel)
     elif model_cfg["type"] in ["HG", "HGwI"]:
         rodnet = RODNet(n_class_test, stacked_num=stacked_num)

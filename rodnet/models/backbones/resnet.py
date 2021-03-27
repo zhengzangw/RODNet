@@ -193,6 +193,32 @@ class R2Plus1dStem(nn.Sequential):
         )
 
 
+class R2Plus1dStem_b(nn.Sequential):
+    def __init__(self, n_channel=2):
+        super(R2Plus1dStem_b, self).__init__(
+            nn.Conv3d(
+                n_channel,
+                45,
+                kernel_size=(9, 1, 1),
+                stride=(1, 1, 1),
+                padding=(4, 0, 0),
+                bias=False,
+            ),
+            nn.BatchNorm3d(45),
+            nn.ReLU(inplace=True),
+            nn.Conv3d(
+                45,
+                64,
+                kernel_size=(1, 5, 5),
+                stride=(1, 2, 2),
+                padding=(0, 2, 2),
+                bias=False,
+            ),
+            nn.BatchNorm3d(64),
+            nn.ReLU(inplace=True),
+        )
+
+
 class VideoResNet(nn.Module):
     def __init__(
         self,
@@ -362,6 +388,17 @@ def r2plus1d_18(pretrained=False, progress=True, **kwargs):
     )
 
 
+def r2plus1d_18_b(pretrained=False, progress=True, **kwargs):
+    return _video_resnet(
+        "r2plus1d_18_b",
+        block=BasicBlock,
+        conv_makers=[Conv2Plus1D] * 4,
+        layers=[2, 2, 2, 2],
+        stem=R2Plus1dStem_b,
+        **kwargs
+    )
+
+
 def _make_conv(
     in_channels,
     out_channels,
@@ -378,6 +415,77 @@ def _make_conv(
         padding=padding,
     )
     return nn.Sequential(conv, nn.BatchNorm3d(out_channels), nn.ReLU(inplace=False),)
+
+
+class ResnetDecoder_b(nn.Module):
+    def __init__(self, num_class):
+        super(ResnetDecoder_b, self).__init__()
+        self.conv_x3 = _make_conv(256, 512, stride=(2, 2, 2))
+        self.conv_x2 = _make_conv(128, 256, stride=(2, 2, 2))
+        self.conv_x1 = _make_conv(64, 128, stride=(2, 2, 2))
+
+        self.prelu = nn.PReLU()
+
+        self.convt4 = nn.ConvTranspose3d(
+            in_channels=512,
+            out_channels=256,
+            kernel_size=(4, 6, 6),
+            stride=(2, 2, 2),
+            padding=(1, 2, 2),
+        )
+        self.convt3 = nn.ConvTranspose3d(
+            in_channels=256,
+            out_channels=128,
+            kernel_size=(4, 6, 6),
+            stride=(2, 2, 2),
+            padding=(1, 2, 2),
+        )
+        self.convt2 = nn.ConvTranspose3d(
+            in_channels=128,
+            out_channels=64,
+            kernel_size=(4, 6, 6),
+            stride=(2, 2, 2),
+            padding=(1, 2, 2),
+        )
+        self.convt1 = nn.ConvTranspose3d(
+            in_channels=64,
+            out_channels=num_class,
+            kernel_size=(3, 6, 6),
+            stride=(1, 2, 2),
+            padding=(1, 2, 2),
+        )
+
+        self._initialize_weights()
+
+    def forward(self, x1, x2, x3, x4):
+        # x1 [-1, 64, 16, 64, 64]
+        # x2 [-1, 128, 8, 32, 32]
+        # x3 [-1, 256, 4, 16, 16]
+        # x4 [-1, 512, 2, 8, 8]
+
+        x3 = self.conv_x3(x3)  # [-1, 512, 2, 8, 8]
+        x2 = self.conv_x2(x2)  # [-1, 256, 4, 16, 16]
+        x1 = self.conv_x1(x1)  # [-1, 128, 8, 32, 32]
+
+        x = x4
+        x = self.prelu(self.convt4(x + x3))
+        x = self.prelu(self.convt3(x + x2))
+        x = self.prelu(self.convt2(x + x1))
+        x = self.convt1(x)
+        return x
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm3d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
 
 
 class ResnetDecoder(nn.Module):

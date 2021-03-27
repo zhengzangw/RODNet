@@ -194,7 +194,16 @@ if __name__ == "__main__":
         rodnet = RODNet(model_cfg["n_class"])
         criterion = nn.CrossEntropyLoss()
         is_cls = True
-    elif model_cfg["type"] in ["CDC", "C21D", "CDCD", "GSC", "GSCmp", "Resnet18"]:
+    elif model_cfg["type"] in [
+        "CDC",
+        "C21D",
+        "CDCD",
+        "GSC",
+        "GSCmp",
+        "Resnet18",
+        "Resnet18b",
+        "Resnet18c",
+    ]:
         rodnet = RODNet(n_class_train, n_channel=channel)
         criterion = nn.MSELoss()
     elif model_cfg["type"] in ["HG", "HGwI"]:
@@ -223,7 +232,7 @@ if __name__ == "__main__":
         scheduler = CosineAnnealingWarmRestarts(optimizer, train_cfg["restart_epoch"])
     elif "warmup_cosine" in train_cfg:
         print("Use warmup cosine scheduler.")
-        t = 10
+        t = 3
         T = 50
         lambda1 = lambda epoch: (
             (0.9 * epoch / t + 0.1)
@@ -270,7 +279,7 @@ if __name__ == "__main__":
             seq_type = data_dict["seq_type"]
             tic = time.time()
             optimizer.zero_grad()  # zero the parameter gradients
-            
+
             confmap_preds = rodnet(data.float().cuda())
 
             loss_confmap = 0

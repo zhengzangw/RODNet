@@ -6,7 +6,7 @@ from .rodnet_gsc import RODNetGSC
 from .rodnet_gscmp import RODNetGSCmp
 from .rodnet_hg import RODNetHG
 from .rodnet_hgwi import RODNetHGwI
-from .rodnet_resnet import RODNetResnet18
+from .rodnet_resnet import RODNetResnet18, RODNetResnet18_b, RODNetResnet18_c
 
 
 def get_model(name):
@@ -28,5 +28,9 @@ def get_model(name):
         return Resnet18
     elif name == "Resnet18":
         return RODNetResnet18
+    elif name == "Resnet18b":
+        return RODNetResnet18_b
+    elif name == "Resnet18c":
+        return RODNetResnet18_c
     else:
         raise NotImplementedError

@@ -40,8 +40,8 @@ def cropmix(dict_1, dict_2):
     confmap1 = dict_1["anno"]["confmaps"]
     confmap2 = dict_2["anno"]["confmaps"]
 
-    W_x = random.randint(32, 96) #128
-    W_y = random.randint(32, 96) #128
+    W_x = random.randint(32, 96)  # 128
+    W_y = random.randint(32, 96)  # 128
     x_l = random.randint(0, 127 - W_x)
     y_l = random.randint(0, 127 - W_y)
 
@@ -147,6 +147,12 @@ seq_info = {
     "2019_09_29_ONRD012": (0, 1, "HW"),
     "2019_10_13_ONRD048": (0, 1, "HW"),
 }
+
+
+def same_type(dict1, dict2):
+    return (
+        dict1["seq_type"] in ["CR", "PL"] and dict2["seq_type"] in ["CR", "PL"]
+    ) or (dict1["seq_type"] in ["CS", "HW"] and dict2["seq_type"] in ["CS", "HW"])
 
 
 def seq_split(data_files, seq_type):
@@ -383,15 +389,20 @@ class CRDataset(data.Dataset):
         return rand_dict
 
     def augmentation(self, data_dict):
+        aug_dict = self.rand_item()
+        if not same_type(data_dict, aug_dict):
+            return data_dict
         if flipcoin(1 / 2):
-            data_dict = cropmix(data_dict, self.rand_item())
+            data_dict = cropmix(data_dict, aug_dict)
             data_dict["aug"]["crop"] = 1
-        elif flipcoin(1 / 2):
-            data_dict = mix(data_dict, self.rand_item())
+        else:
+            data_dict = mix(data_dict, aug_dict)
             data_dict["aug"]["mix"] = 1
-        if flipcoin(1 / 2):
+
+        noise_dict = self.rand_item()
+        if same_type(data_dict, noise_dict):
             # noise
-            data_dict = noise(data_dict, self.rand_item())
+            data_dict = noise(data_dict, noise_dict)
             data_dict["aug"]["noise"] = 1
 
         return data_dict
